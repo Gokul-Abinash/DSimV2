@@ -1,0 +1,58 @@
+[8:40:59 PM.262] Node1 - INIT - Byzantine behavior: honest 
+[8:40:59 PM.287] Node1 - INIT - Node initialized, f=1 
+HotStuff Node started at ID=Node1, PORT=3001
+Server listening on port 3001
+[8:41:05 PM.384] Node1 - CLIENT - Request received {"operation":"TX","id":1,"value":100}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:05 PM.438] Node1 - PREPARE - Block 1 {"blockId":"7249f3598a6c5b2536faf7e2d6b9df85b7e8ffad2d02bebb87f1d18441bbc09c","command":{"operation":"TX","id":1,"value":100,"submitTime":1786374665384}}
+{ operation: 'TX', id: 1, value: 100 }
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:05 PM.565] Node1 - PRE-COMMIT - Block 1 {"blockId":"7249f3598a6c5b2536faf7e2d6b9df85b7e8ffad2d02bebb87f1d18441bbc09c","qc":"7249f3598a6c5b2536faf7e2d6b9df85b7e8ffad2d02bebb87f1d18441bbc09c"}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:05 PM.648] Node1 - COMMIT - Block 1 {"blockId":"7249f3598a6c5b2536faf7e2d6b9df85b7e8ffad2d02bebb87f1d18441bbc09c","qc":"7249f3598a6c5b2536faf7e2d6b9df85b7e8ffad2d02bebb87f1d18441bbc09c"}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:05 PM.722] Node1 - DECIDE - Block 1 {"blockId":"7249f3598a6c5b2536faf7e2d6b9df85b7e8ffad2d02bebb87f1d18441bbc09c","executed":true}
+[8:41:08 PM.476] Node1 - CLIENT - Request received {"operation":"TX","id":2,"value":200}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:08 PM.508] Node1 - PREPARE - Block 2 {"blockId":"719573aabf2b7403c223f6b334efad298a98a09b528ab90e2de77d57d1e9e2fa","command":{"operation":"TX","id":2,"value":200,"submitTime":1786374668476}}
+{ operation: 'TX', id: 2, value: 200 }
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:08 PM.579] Node1 - PRE-COMMIT - Block 2 {"blockId":"719573aabf2b7403c223f6b334efad298a98a09b528ab90e2de77d57d1e9e2fa","qc":"719573aabf2b7403c223f6b334efad298a98a09b528ab90e2de77d57d1e9e2fa"}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:08 PM.649] Node1 - COMMIT - Block 2 {"blockId":"719573aabf2b7403c223f6b334efad298a98a09b528ab90e2de77d57d1e9e2fa","qc":"719573aabf2b7403c223f6b334efad298a98a09b528ab90e2de77d57d1e9e2fa"}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:08 PM.717] Node1 - DECIDE - Block 2 {"blockId":"719573aabf2b7403c223f6b334efad298a98a09b528ab90e2de77d57d1e9e2fa","executed":true}
+[8:41:11 PM.560] Node1 - CLIENT - Request received {"operation":"TX","id":3,"value":300}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:11 PM.593] Node1 - PREPARE - Block 3 {"blockId":"2e4fd14daa123d359d455dfb5cdf3ace74dc54314797cdb90ca567ebd3bd5197","command":{"operation":"TX","id":3,"value":300,"submitTime":1786374671560}}
+{ operation: 'TX', id: 3, value: 300 }
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:11 PM.664] Node1 - PRE-COMMIT - Block 3 {"blockId":"2e4fd14daa123d359d455dfb5cdf3ace74dc54314797cdb90ca567ebd3bd5197","qc":"2e4fd14daa123d359d455dfb5cdf3ace74dc54314797cdb90ca567ebd3bd5197"}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:11 PM.738] Node1 - COMMIT - Block 3 {"blockId":"2e4fd14daa123d359d455dfb5cdf3ace74dc54314797cdb90ca567ebd3bd5197","qc":"2e4fd14daa123d359d455dfb5cdf3ace74dc54314797cdb90ca567ebd3bd5197"}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:41:11 PM.806] Node1 - DECIDE - Block 3 {"blockId":"2e4fd14daa123d359d455dfb5cdf3ace74dc54314797cdb90ca567ebd3bd5197","executed":true}

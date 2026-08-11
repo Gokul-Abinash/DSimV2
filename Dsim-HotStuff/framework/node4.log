@@ -1,0 +1,25 @@
+[8:40:59 PM.263] Node4 - INIT - Byzantine behavior: honest 
+[8:40:59 PM.289] Node4 - INIT - Node initialized, f=1 
+HotStuff Node started at ID=Node4, PORT=3004
+Server listening on port 3004
+[LATENCY] null -> A: 0ms delay
+[8:41:05 PM.510] Node4 - PREPARE-VOTE - Sent prepare vote for block 1 
+[LATENCY] null -> A: 0ms delay
+[8:41:05 PM.606] Node4 - PRE-COMMIT-VOTE - Sent precommit vote for block 1 
+[LATENCY] null -> A: 0ms delay
+[8:41:05 PM.684] Node4 - COMMIT-VOTE - Sent commit vote for block 1 
+[8:41:05 PM.724] Node4 - DECIDE - Block 1 {"blockId":"7249f3598a6c5b2536faf7e2d6b9df85b7e8ffad2d02bebb87f1d18441bbc09c","executed":true}
+[LATENCY] null -> A: 0ms delay
+[8:41:08 PM.545] Node4 - PREPARE-VOTE - Sent prepare vote for block 2 
+[LATENCY] null -> A: 0ms delay
+[8:41:08 PM.613] Node4 - PRE-COMMIT-VOTE - Sent precommit vote for block 2 
+[LATENCY] null -> A: 0ms delay
+[8:41:08 PM.682] Node4 - COMMIT-VOTE - Sent commit vote for block 2 
+[8:41:08 PM.719] Node4 - DECIDE - Block 2 {"blockId":"719573aabf2b7403c223f6b334efad298a98a09b528ab90e2de77d57d1e9e2fa","executed":true}
+[LATENCY] null -> A: 0ms delay
+[8:41:11 PM.627] Node4 - PREPARE-VOTE - Sent prepare vote for block 3 
+[LATENCY] null -> A: 0ms delay
+[8:41:11 PM.701] Node4 - PRE-COMMIT-VOTE - Sent precommit vote for block 3 
+[LATENCY] null -> A: 0ms delay
+[8:41:11 PM.772] Node4 - COMMIT-VOTE - Sent commit vote for block 3 
+[8:41:11 PM.808] Node4 - DECIDE - Block 3 {"blockId":"2e4fd14daa123d359d455dfb5cdf3ace74dc54314797cdb90ca567ebd3bd5197","executed":true}

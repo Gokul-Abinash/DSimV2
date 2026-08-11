@@ -1,0 +1,2 @@
+Test_Type,Algorithm,Total_Tx,Successful,Failed,Duration_s,TPS,Success_Rate_%
+burst,paxos,5,5,0,1.224,4.084967320261438,100

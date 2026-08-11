@@ -1,0 +1,2 @@
+Test_Type,Algorithm,Total_Tx,Successful,Failed,Duration_s,TPS,Success_Rate_%
+burst,raft,100,100,0,112.526,0.888683504256794,100

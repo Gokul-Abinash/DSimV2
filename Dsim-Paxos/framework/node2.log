@@ -1,0 +1,28 @@
+[Node2] Loading honest protocol
+Node Node2 behavior: honest
+[8:40:33 PM.731] Node2 - INIT - Node initialized, majority: 3 
+Paxos Node started at ID=Node2, PORT=3002
+Node Node2 behavior: honest
+[8:40:33 PM.761] Node2 - INIT - Node initialized, majority: 3 
+Server listening on port 3002
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> C: 0ms delay
+[LATENCY] Node2 -> D: 0ms delay
+[8:40:39 PM.983] Node2 - ACCEPTED - Sent ACCEPTED for proposal 1786374639842 
+[8:40:39 PM.988] Node2 - ACCEPTED - Received ACCEPTED from Node4 
+[8:40:39 PM.990] Node2 - ACCEPTED - Received ACCEPTED from Node3 
+[8:40:40 PM.10] Node2 - DECIDED - Value decided for instance 1786374639841.8428 
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> C: 0ms delay
+[LATENCY] Node2 -> D: 0ms delay
+[8:40:43 PM.45] Node2 - ACCEPTED - Sent ACCEPTED for proposal 1786374642967 
+[8:40:43 PM.47] Node2 - ACCEPTED - Received ACCEPTED from Node4 
+[8:40:43 PM.48] Node2 - ACCEPTED - Received ACCEPTED from Node3 
+[8:40:43 PM.70] Node2 - DECIDED - Value decided for instance 1786374642967.9983 
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> C: 0ms delay
+[LATENCY] Node2 -> D: 0ms delay
+[8:40:46 PM.125] Node2 - ACCEPTED - Sent ACCEPTED for proposal 1786374646049 
+[8:40:46 PM.130] Node2 - ACCEPTED - Received ACCEPTED from Node3 
+[8:40:46 PM.133] Node2 - ACCEPTED - Received ACCEPTED from Node4 
+[8:40:46 PM.151] Node2 - DECIDED - Value decided for instance 1786374646049.5142 

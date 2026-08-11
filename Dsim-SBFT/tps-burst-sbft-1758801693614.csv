@@ -1,0 +1,2 @@
+Test_Type,Algorithm,Total_Tx,Successful,Failed,Duration_s,TPS,Success_Rate_%
+burst,sbft,1000,1000,0,19.494,51.29783523135324,100

@@ -1,0 +1,252 @@
+const graph = require('./helper_modules/graph.js');
+const broadcastNew = require('./helper_modules/broadcastNew.js');
+const cryptoHelper = require('./helper_modules/cryptoHelper.js');
+const crypto = require('crypto');
+
+const ENABLE_LOGGING = true;
+
+const primeLog = [];
+const primeCommitLog = [];
+
+function timestamp() {
+  const date = new Date();
+  return date.toLocaleTimeString() + "." + date.getMilliseconds();
+}
+
+function logPrimeEvent(event) {
+  primeLog.push({ ...event, timestamp: new Date().toISOString() });
+  if (ENABLE_LOGGING) {
+    console.log(`[${timestamp()}]`, event.node || '-', "-", event.phase || '-', "-", event.action || '-', event.details ? JSON.stringify(event.details) : "");
+  }
+}
+
+const PrimeState = {
+  view: 0,
+  sequence: 0,
+  f: 1,
+  log: {},
+  pendingRequests: [],
+  executedRequests: new Set()
+};
+
+const nodeIDs = graph.nodeIPsArray.map(obj => Object.keys(obj)[0]);
+let myNodeID, myPrivateKey, myPublicKey, myBehavior = 'honest', messageCount = 0;
+
+function setNodeContext(nodeID) {
+  // Load Byzantine configuration
+  try {
+    const byzantineConfig = require('./byzantine-config.js');
+    myBehavior = byzantineConfig[nodeID] || 'honest';
+    console.log(`Node ${nodeID} behavior: ${myBehavior}`);
+  } catch (error) {
+    myBehavior = 'honest';
+  }
+  
+  myNodeID = nodeID;
+  myPrivateKey = cryptoHelper.loadPrivateKey(nodeID);
+  myPublicKey = cryptoHelper.loadPublicKey(nodeID);
+  PrimeState.f = Math.floor((nodeIDs.length - 1) / 3);
+  
+  logPrimeEvent({ node: myNodeID, phase: 'INIT', action: 'Node context set' });
+  
+  // Faster processing timer
+  setInterval(() => {
+    if (myNodeID === getLeader(PrimeState.view) && PrimeState.pendingRequests.length > 0) {
+      processRequests();
+    }
+  }, 100);
+}
+
+function getLeader(view) {
+  return nodeIDs[view % nodeIDs.length];
+}
+
+function handleClientRequest(request, nodeID) {
+  PrimeState.pendingRequests.push({ ...request, submitTime: Date.now() });
+  logPrimeEvent({ node: nodeID, phase: 'CLIENT', action: 'Request received', details: request });
+}
+
+function processRequests() {
+  if (PrimeState.pendingRequests.length === 0) return;
+  
+  // Allow up to 3 concurrent transactions
+  const maxConcurrent = 3;
+  const activeTransactions = Object.values(PrimeState.log).filter(entry => 
+    entry && !entry.executed
+  ).length;
+  
+  if (activeTransactions >= maxConcurrent) return;
+  
+  const request = PrimeState.pendingRequests.shift();
+  const seq = ++PrimeState.sequence;
+  
+  PrimeState.log[seq] = {
+    request,
+    preprepare: null,
+    prepares: new Set(),
+    commits: new Set(),
+    executed: false,
+    prepared: false,
+    committed: false,
+    view: PrimeState.view
+  };
+
+  const prePrepareMsg = { view: PrimeState.view, seq, request };
+  broadcastMessage('PRE-PREPARE', prePrepareMsg);
+  logPrimeEvent({ node: myNodeID, phase: 'PRE-PREPARE', action: `Sent pre-prepare for seq ${seq}` });
+}
+
+function handlePrimeMessage(msg, nodeID) {
+  const { type, sender, data, signature } = msg;
+  messageCount++;
+  
+  // Apply Byzantine behavior
+  if (myBehavior === 'silent' && messageCount > 3) {
+    logPrimeEvent({node: myNodeID, phase: "BYZANTINE", action: `Silent node ignoring message #${messageCount}`});
+    return;
+  }
+  
+  if (myBehavior === 'delay') {
+    const delay = Math.random() * 2000 + 1000;
+    logPrimeEvent({node: myNodeID, phase: "BYZANTINE", action: `Delaying message by ${delay.toFixed(0)}ms`});
+    setTimeout(() => processPrimeMessage(msg, nodeID), delay);
+    return;
+  }
+  
+  processPrimeMessage(msg, nodeID);
+}
+
+function processPrimeMessage(msg, nodeID) {
+  const { type, sender, data } = msg;
+  
+  switch (type) {
+    case 'PRE-PREPARE':
+      onReceivePrePrepare(data, sender);
+      break;
+    case 'PREPARE':
+      onReceivePrepare(data, sender);
+      break;
+    case 'COMMIT':
+      onReceiveCommit(data, sender);
+      break;
+  }
+}
+
+function onReceivePrePrepare(data, sender) {
+  const { view, seq, request } = data;
+  if (view !== PrimeState.view) return;
+  
+  PrimeState.log[seq] = {
+    request,
+    preprepare: data,
+    prepares: new Set([myNodeID]),
+    commits: new Set(),
+    executed: false,
+    prepared: false,
+    committed: false,
+    view
+  };
+  
+  broadcastMessage('PREPARE', { view, seq });
+  logPrimeEvent({ node: myNodeID, phase: 'PREPARE', action: `Sent prepare for seq ${seq}` });
+}
+
+function onReceivePrepare(data, sender) {
+  const { view, seq } = data;
+  if (view !== PrimeState.view || !PrimeState.log[seq]) return;
+  
+  PrimeState.log[seq].prepares.add(sender);
+  
+  if (PrimeState.log[seq].prepares.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].prepared) {
+    PrimeState.log[seq].prepared = true;
+    PrimeState.log[seq].commits.add(myNodeID);
+    broadcastMessage('COMMIT', { view, seq });
+    logPrimeEvent({ node: myNodeID, phase: 'COMMIT', action: `Sent commit for seq ${seq}` });
+  }
+}
+
+function onReceiveCommit(data, sender) {
+  const { view, seq } = data;
+  if (view !== PrimeState.view || !PrimeState.log[seq]) return;
+  
+  PrimeState.log[seq].commits.add(sender);
+  
+  if (PrimeState.log[seq].commits.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].executed) {
+    executeRequest(seq);
+  }
+}
+
+function executeRequest(seq) {
+  const entry = PrimeState.log[seq];
+  if (!entry || entry.executed) return;
+  
+  entry.executed = true;
+  const request = entry.request;
+  
+  if (!PrimeState.executedRequests.has(request.id)) {
+    PrimeState.executedRequests.add(request.id);
+    
+    // Apply Byzantine behavior to commit log
+    let commitValue = request.value || 0;
+    if (myBehavior === 'corrupt') {
+      const corruptionTypes = ['add', 'multiply', 'random'];
+      const corruptionType = corruptionTypes[Math.floor(Math.random() * corruptionTypes.length)];
+      
+      switch (corruptionType) {
+        case 'add':
+          commitValue = commitValue + Math.floor(Math.random() * 100) + 1;
+          break;
+        case 'multiply':
+          commitValue = commitValue * (Math.floor(Math.random() * 3) + 2);
+          break;
+        case 'random':
+          commitValue = Math.floor(Math.random() * 1000) + 1;
+          break;
+      }
+      logPrimeEvent({node: myNodeID, phase: "CORRUPT", action: `Corrupted value ${request.value} -> ${commitValue}`});
+    }
+    
+    primeCommitLog.push({
+      committedAt: new Date().toISOString(),
+      operation: request.operation || 'TX',
+      value: commitValue,
+      sequence: seq,
+      totalTimeMs: request.submitTime ? (Date.now() - request.submitTime) : null
+    });
+    
+    logPrimeEvent({ node: myNodeID, phase: 'EXECUTION', action: `Executed request seq ${seq} with value ${commitValue}` });
+  }
+}
+
+function signMessage(msgObj) {
+  const msgString = JSON.stringify(msgObj);
+  return cryptoHelper.signMessage(myPrivateKey, msgString);
+}
+
+function broadcastMessage(type, data) {
+  const allNodes = graph.nodeIPsArray.map(obj => Object.keys(obj)[0]);
+  const myIdx = allNodes.indexOf(myNodeID);
+  const restNodes = graph.nodeIPsArray.map((obj, idx) => idx !== myIdx ? Object.values(obj)[0] : null).filter(Boolean);
+  const ips = restNodes.map(n => n.ip);
+  const ports = restNodes.map(n => n.port);
+  const endpoints = ports.map(() => 'api/prime');
+  const msgObj = { type, sender: myNodeID, data };
+  msgObj.signature = signMessage(msgObj);
+  broadcastNew.sendPostRequestsToIPs(msgObj, ips, ports, endpoints);
+}
+
+function getPrimeNodeLog() {
+  return primeLog;
+}
+
+function getPrimeCommitLog() {
+  return primeCommitLog;
+}
+
+module.exports = {
+  setNodeContext,
+  handleClientRequest,
+  handlePrimeMessage,
+  getPrimeNodeLog,
+  getPrimeCommitLog
+};

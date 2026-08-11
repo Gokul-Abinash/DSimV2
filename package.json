@@ -1,0 +1,16 @@
+{
+  "name": "distsim-framework",
+  "version": "1.0.0",
+  "description": "Distributed Consensus Simulation Framework",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1490.0",
+    "node-ssh": "^13.1.0"
+  },
+  "keywords": ["consensus", "distributed-systems", "blockchain", "pbft", "raft"],
+  "author": "DistSim Team",
+  "license": "MIT"
+}

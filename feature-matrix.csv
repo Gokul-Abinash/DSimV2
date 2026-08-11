@@ -1,0 +1,58 @@
+Feature Category,Feature,PBFT,SBFT,Raft,Paxos,HotStuff,Prime,MIS,MST-GHS
+Core Operations,Start/Stop Nodes,✅,✅,✅,✅,✅,✅,✅,✅
+Core Operations,Node Status Check,✅,✅,✅,✅,✅,✅,✅,✅
+Core Operations,Transaction Testing,✅,✅,✅,✅,✅,✅,⚠️*,⚠️*
+Core Operations,Consensus Verification,✅,✅,✅,✅,✅,✅,✅,✅
+Core Operations,Statistics Display,✅,✅,✅,✅,✅,✅,✅,✅
+Core Operations,Log Viewing,✅,✅,✅,✅,✅,✅,✅,✅
+Network & Topology,Topology Configuration,✅,✅,✅,✅,✅,✅,✅,✅
+Network & Topology,Full Mesh Topology,✅,✅,✅,✅,✅,✅,✅,✅
+Network & Topology,Ring Topology,✅,✅,✅,✅,✅,✅,✅,✅
+Network & Topology,Star Topology,✅,✅,✅,✅,✅,✅,✅,✅
+Network & Topology,Line Topology,✅,✅,✅,✅,✅,✅,✅,✅
+Network & Topology,Dynamic Node Count (4-10),✅,✅,✅,✅,✅,✅,✅,✅
+Fault Tolerance,Byzantine Fault Support,✅,✅,❌,❌,✅,✅,❌,❌
+Fault Tolerance,Silent Byzantine Nodes,✅,✅,❌,❌,✅,✅,❌,❌
+Fault Tolerance,Corrupt Byzantine Nodes,✅,✅,❌,❌,✅,✅,❌,❌
+Fault Tolerance,Delay Byzantine Nodes,✅,✅,❌,❌,✅,✅,❌,❌
+Fault Tolerance,Random Byzantine Nodes,✅,✅,❌,❌,✅,✅,❌,❌
+Fault Tolerance,Crash Fault Support,❌,❌,✅,✅,❌,❌,❌,❌
+Network Simulation,Latency Simulation,✅,✅,✅,✅,✅,✅,✅,✅
+Network Simulation,LAN Profile (1-5ms),✅,✅,✅,✅,✅,✅,✅,✅
+Network Simulation,WAN Profile (50-150ms),✅,✅,✅,✅,✅,✅,✅,✅
+Network Simulation,High Latency (200-800ms),✅,✅,✅,✅,✅,✅,✅,✅
+Network Simulation,Unstable Network,✅,✅,✅,✅,✅,✅,✅,✅
+Network Simulation,Custom Latency Config,✅,✅,✅,✅,✅,✅,✅,✅
+Network Simulation,Latency Distributions,✅,✅,✅,✅,✅,✅,✅,✅
+Performance Testing,Single Algorithm Testing,✅,✅,✅,✅,✅,⚠️**,❌***,❌***
+Performance Testing,Automated Benchmarking,✅,✅,✅,✅,✅,⚠️**,❌***,❌***
+Performance Testing,CSV Report Generation,✅,✅,✅,✅,✅,⚠️**,❌***,❌***
+Performance Testing,Performance Metrics,✅,✅,✅,✅,✅,⚠️**,❌***,❌***
+Performance Testing,Success Rate Analysis,✅,✅,✅,✅,✅,⚠️**,❌***,❌***
+Performance Testing,Duration Measurements,✅,✅,✅,✅,✅,⚠️**,❌***,❌***
+Security & Cryptography,Digital Signatures,✅,✅,✅,✅,✅,✅,❌,❌
+Security & Cryptography,Message Authentication,✅,✅,✅,✅,✅,✅,❌,❌
+Security & Cryptography,Key Management,✅,✅,✅,✅,✅,✅,❌,❌
+Deployment Options,Localhost Deployment,✅,✅,✅,✅,✅,✅,✅,✅
+Deployment Options,Multi-Machine Config,✅,✅,✅,✅,✅,✅,✅,✅
+Deployment Options,Docker Support,✅,✅,✅,✅,✅,✅,✅,✅
+Deployment Options,Cloud Deployment Config,✅,✅,✅,✅,✅,✅,✅,✅
+Deployment Options,Automated Setup Scripts,✅,✅,✅,✅,✅,✅,✅,✅
+Monitoring & Debugging,Real-time Logging,✅,✅,✅,✅,✅,✅,✅,✅
+Monitoring & Debugging,Commit Log Tracking,✅,✅,✅,✅,✅,✅,✅,✅
+Monitoring & Debugging,Protocol State Display,✅,✅,✅,✅,✅,✅,✅,✅
+Monitoring & Debugging,Node Health Monitoring,✅,✅,✅,✅,✅,✅,✅,✅
+Monitoring & Debugging,Error Handling,✅,✅,✅,✅,✅,✅,✅,✅
+API & Integration,REST API Endpoints,✅,✅,✅,✅,✅,✅,✅,✅
+API & Integration,JSON Message Format,✅,✅,✅,✅,✅,✅,✅,✅
+API & Integration,HTTP Client Interface,✅,✅,✅,✅,✅,✅,✅,✅
+API & Integration,CLI Integration,✅,✅,✅,✅,✅,✅,✅,✅
+Algorithm-Specific Features,View Changes,✅,❌,❌,❌,✅,❌,❌,❌
+Algorithm-Specific Features,Leader Election,❌,❌,✅,✅,✅,❌,❌,❌
+Algorithm-Specific Features,Log Replication,❌,❌,✅,✅,❌,❌,❌,❌
+Algorithm-Specific Features,Three-Phase Protocol,✅,❌,❌,❌,❌,❌,❌,❌
+Algorithm-Specific Features,Collector Nodes,❌,✅,❌,❌,❌,❌,❌,❌
+Algorithm-Specific Features,Threshold Signatures,❌,❌,❌,❌,✅,❌,❌,❌
+Algorithm-Specific Features,Graph Algorithms,❌,❌,❌,❌,❌,❌,✅,✅
+Algorithm-Specific Features,Independent Set,❌,❌,❌,❌,❌,❌,✅,❌
+Algorithm-Specific Features,Spanning Tree,❌,❌,❌,❌,❌,❌,❌,✅

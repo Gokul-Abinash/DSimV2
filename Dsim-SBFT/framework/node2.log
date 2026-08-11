@@ -1,0 +1,31 @@
+[Node2] Loading honest protocol
+[8:39:42 PM.570] Node2 - INIT - Byzantine behavior: honest 
+[8:39:42 PM.594] Node2 - INIT - Node role: collector, primary: Node1 
+SBFT Node started at ID=Node2, PORT=3002
+[8:39:42 PM.597] Node2 - INIT - Byzantine behavior: honest 
+[8:39:42 PM.597] Node2 - INIT - Node role: collector, primary: Node1 
+Server listening on port 3002
+[8:39:49 PM.36] Node2 - PREPARE - Accepted PREPARE for req#1 from Node1 
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> C: 0ms delay
+[LATENCY] Node2 -> D: 0ms delay
+[8:39:49 PM.93] Node2 - COMMIT - Sent COMMIT for req #1 
+[8:39:49 PM.98] Node2 - COMMIT - Accepted COMMIT for req #1 from Node3 {"totalCommits":2}
+[8:39:49 PM.101] Node2 - COMMIT - Accepted COMMIT for req #1 from Node4 {"totalCommits":3}
+[8:39:49 PM.101] Node2 - EXECUTION - Executed request #1 ✅ 
+[8:39:51 PM.978] Node2 - PREPARE - Accepted PREPARE for req#2 from Node1 
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> C: 0ms delay
+[LATENCY] Node2 -> D: 0ms delay
+[8:39:52 PM.14] Node2 - COMMIT - Sent COMMIT for req #2 
+[8:39:52 PM.18] Node2 - COMMIT - Accepted COMMIT for req #2 from Node4 {"totalCommits":2}
+[8:39:52 PM.20] Node2 - COMMIT - Accepted COMMIT for req #2 from Node3 {"totalCommits":3}
+[8:39:52 PM.20] Node2 - EXECUTION - Executed request #2 ✅ 
+[8:39:55 PM.10] Node2 - PREPARE - Accepted PREPARE for req#3 from Node1 
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> C: 0ms delay
+[LATENCY] Node2 -> D: 0ms delay
+[8:39:55 PM.51] Node2 - COMMIT - Sent COMMIT for req #3 
+[8:39:55 PM.55] Node2 - COMMIT - Accepted COMMIT for req #3 from Node3 {"totalCommits":2}
+[8:39:55 PM.57] Node2 - COMMIT - Accepted COMMIT for req #3 from Node4 {"totalCommits":3}
+[8:39:55 PM.57] Node2 - EXECUTION - Executed request #3 ✅ 

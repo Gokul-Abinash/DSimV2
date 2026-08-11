@@ -1,0 +1,20 @@
+[8:42:37 PM.804] Node3 - INIT - Edge Node1-Node3 weight: 8 
+[8:42:37 PM.848] Node3 - INIT - Edge Node2-Node3 weight: 8 
+[8:42:37 PM.848] Node3 - INIT - Edge Node3-Node4 weight: 8 
+[8:42:37 PM.848] Node3 - INIT - Edge Node3-Node5 weight: 8 
+[8:42:37 PM.849] Node3 - INIT - Edge Node3-Node6 weight: 8 
+[8:42:37 PM.849] Node3 - INIT - Edge Node3-Node7 weight: 8 
+[8:42:37 PM.849] Node3 - INIT - Edge Node3-Node8 weight: 8 
+[8:42:37 PM.849] Node3 - INIT - Node initialized for MST 
+GHS Node started at ID=Node3, PORT=3003
+Server listening on port 3003
+[8:42:44 PM.318] Node3 - START - Starting simplified MST algorithm 
+[8:42:44 PM.319] Node3 - KRUSKAL - Total edges: 28, need 7 for MST 
+[8:42:44 PM.319] Node3 - MST_BUILD - Added edge Node1-Node2 weight: 8 (1/7) 
+[8:42:44 PM.319] Node3 - MST_BUILD - Added edge Node1-Node3 weight: 8 (2/7) 
+[8:42:44 PM.319] Node3 - MST_BUILD - Added edge Node1-Node4 weight: 8 (3/7) 
+[8:42:44 PM.319] Node3 - MST_BUILD - Added edge Node1-Node5 weight: 8 (4/7) 
+[8:42:44 PM.319] Node3 - MST_BUILD - Added edge Node1-Node6 weight: 8 (5/7) 
+[8:42:44 PM.319] Node3 - MST_BUILD - Added edge Node1-Node7 weight: 8 (6/7) 
+[8:42:44 PM.319] Node3 - MST_BUILD - Added edge Node1-Node8 weight: 8 (7/7) 
+[8:42:49 PM.322] Node3 - COMPLETE - MST completed. Edges: 1 

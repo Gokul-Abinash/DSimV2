@@ -1,0 +1,37 @@
+[Node1] Loading honest protocol
+Node Node1 behavior: honest
+[8:40:33 PM.731] Node1 - INIT - Node initialized, majority: 3 
+Paxos Node started at ID=Node1, PORT=3001
+Node Node1 behavior: honest
+[8:40:33 PM.761] Node1 - INIT - Node initialized, majority: 3 
+Server listening on port 3001
+[8:40:39 PM.841] Node1 - CLIENT - Starting Paxos instance 1786374639841.8428 {"operation":"TX","id":1,"value":100}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:40:39 PM.899] Node1 - ACCEPT - Sent ACCEPT for instance 1786374639841.8428 
+{ operation: 'TX', id: 1, value: 100 }
+[8:40:39 PM.951] Node1 - DECIDED - Value decided for instance 1786374639841.8428 
+[8:40:39 PM.987] Node1 - ACCEPTED - Received ACCEPTED from Node4 
+[8:40:39 PM.990] Node1 - ACCEPTED - Received ACCEPTED from Node3 
+[8:40:39 PM.992] Node1 - ACCEPTED - Received ACCEPTED from Node2 
+[8:40:42 PM.967] Node1 - CLIENT - Starting Paxos instance 1786374642967.9983 {"operation":"TX","id":2,"value":200}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:40:43 PM.4] Node1 - ACCEPT - Sent ACCEPT for instance 1786374642967.9983 
+{ operation: 'TX', id: 2, value: 200 }
+[8:40:43 PM.45] Node1 - ACCEPTED - Received ACCEPTED from Node4 
+[8:40:43 PM.47] Node1 - ACCEPTED - Received ACCEPTED from Node3 
+[8:40:43 PM.48] Node1 - ACCEPTED - Received ACCEPTED from Node2 
+[8:40:43 PM.54] Node1 - DECIDED - Value decided for instance 1786374642967.9983 
+[8:40:46 PM.49] Node1 - CLIENT - Starting Paxos instance 1786374646049.5142 {"operation":"TX","id":3,"value":300}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:40:46 PM.87] Node1 - ACCEPT - Sent ACCEPT for instance 1786374646049.5142 
+{ operation: 'TX', id: 3, value: 300 }
+[8:40:46 PM.129] Node1 - ACCEPTED - Received ACCEPTED from Node2 
+[8:40:46 PM.131] Node1 - ACCEPTED - Received ACCEPTED from Node3 
+[8:40:46 PM.133] Node1 - ACCEPTED - Received ACCEPTED from Node4 
+[8:40:46 PM.137] Node1 - DECIDED - Value decided for instance 1786374646049.5142 

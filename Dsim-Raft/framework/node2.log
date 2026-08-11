@@ -1,0 +1,56 @@
+[Node2] Loading honest protocol
+Node Node2 behavior: honest
+[8:40:07 PM.928] Node2 - STATE - Became FOLLOWER, leader: Node1 
+[8:40:07 PM.957] Node2 - INIT - Node initialized, leader: Node1 
+Raft Node started at ID=Node2, PORT=3002
+Node Node2 behavior: honest
+[8:40:07 PM.959] Node2 - STATE - Became FOLLOWER, leader: Node1 
+[8:40:07 PM.959] Node2 - INIT - Node initialized, leader: Node1 
+Server listening on port 3002
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[8:40:14 PM.307] Node2 - REPLICATION - Appended 1 entries from Node1 
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[8:40:15 PM.230] Node2 - COMMIT - Applied entry 1 {"operation":"TX","id":1,"value":100}
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[8:40:17 PM.492] Node2 - REPLICATION - Appended 1 entries from Node1 
+[LATENCY] Node2 -> A: 0ms delay
+[8:40:18 PM.235] Node2 - COMMIT - Applied entry 2 {"operation":"TX","id":2,"value":200}
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[8:40:20 PM.614] Node2 - REPLICATION - Appended 1 entries from Node1 
+[LATENCY] Node2 -> A: 0ms delay
+[8:40:21 PM.239] Node2 - COMMIT - Applied entry 3 {"operation":"TX","id":3,"value":300}
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay
+[LATENCY] Node2 -> A: 0ms delay

@@ -1,0 +1,40 @@
+[Node1] Loading honest protocol
+[8:39:42 PM.570] Node1 - INIT - Byzantine behavior: honest 
+[8:39:42 PM.594] Node1 - INIT - Node role: primary, primary: Node1 
+SBFT Node started at ID=Node1, PORT=3001
+[8:39:42 PM.599] Node1 - INIT - Byzantine behavior: honest 
+[8:39:42 PM.599] Node1 - INIT - Node role: primary, primary: Node1 
+Server listening on port 3001
+[8:39:48 PM.882] Node1 - CLIENT - Request queued for processing {"operation":"TX","id":1,"value":100}
+{ operation: 'TX', id: 1, value: 100 }
+[8:39:48 PM.956] Node1 - CLIENT - Processing request #1 {"operation":"TX","id":1,"value":100,"submitTime":1786374588882}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:39:49 PM.15] Node1 - PREPARE - Primary sent PREPARE for req #1 
+[8:39:49 PM.100] Node1 - COMMIT - Accepted COMMIT for req #1 from Node3 {"totalCommits":1}
+[8:39:49 PM.102] Node1 - COMMIT - Accepted COMMIT for req #1 from Node2 {"totalCommits":2}
+[8:39:49 PM.105] Node1 - COMMIT - Accepted COMMIT for req #1 from Node4 {"totalCommits":3}
+[8:39:49 PM.105] Node1 - EXECUTION - Executed request #1 ✅ 
+[8:39:51 PM.931] Node1 - CLIENT - Request queued for processing {"operation":"TX","id":2,"value":200}
+{ operation: 'TX', id: 2, value: 200 }
+[8:39:51 PM.942] Node1 - CLIENT - Processing request #2 {"operation":"TX","id":2,"value":200,"submitTime":1786374591931}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:39:51 PM.976] Node1 - PREPARE - Primary sent PREPARE for req #2 
+[8:39:52 PM.18] Node1 - COMMIT - Accepted COMMIT for req #2 from Node2 {"totalCommits":1}
+[8:39:52 PM.21] Node1 - COMMIT - Accepted COMMIT for req #2 from Node4 {"totalCommits":2}
+[8:39:52 PM.23] Node1 - COMMIT - Accepted COMMIT for req #2 from Node3 {"totalCommits":3}
+[8:39:52 PM.23] Node1 - EXECUTION - Executed request #2 ✅ 
+[8:39:54 PM.970] Node1 - CLIENT - Request queued for processing {"operation":"TX","id":3,"value":300}
+{ operation: 'TX', id: 3, value: 300 }
+[8:39:54 PM.974] Node1 - CLIENT - Processing request #3 {"operation":"TX","id":3,"value":300,"submitTime":1786374594970}
+[LATENCY] Node1 -> B: 0ms delay
+[LATENCY] Node1 -> C: 0ms delay
+[LATENCY] Node1 -> D: 0ms delay
+[8:39:55 PM.8] Node1 - PREPARE - Primary sent PREPARE for req #3 
+[8:39:55 PM.50] Node1 - COMMIT - Accepted COMMIT for req #3 from Node3 {"totalCommits":1}
+[8:39:55 PM.55] Node1 - COMMIT - Accepted COMMIT for req #3 from Node2 {"totalCommits":2}
+[8:39:55 PM.57] Node1 - COMMIT - Accepted COMMIT for req #3 from Node4 {"totalCommits":3}
+[8:39:55 PM.57] Node1 - EXECUTION - Executed request #3 ✅ 

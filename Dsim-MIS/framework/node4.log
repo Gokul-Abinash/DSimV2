@@ -1,0 +1,30 @@
+[8:42:07 PM.78] Node4 - INIT - Node context set. Starting candidate=true 
+MIS Node started at ID=Node4, PORT=3004
+Server listening on port 3004
+[8:42:13 PM.586] Node4 - RANDOM - Stored random from Node3 for round 1: 0.3062982424927124 
+[8:42:13 PM.598] Node4 - START - Starting Luby MIS algorithm 
+[8:42:13 PM.598] Node4 - ROUND - Round 1: my random = 0.23240113887874247 
+[8:42:13 PM.606] Node4 - RANDOM - Broadcasted random for round 1 to 2 neighbors 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:42:13 PM.640] Node4 - RANDOM - Stored random from Node5 for round 1: 0.10414329268099487 
+[8:42:15 PM.134] Node4 - ROUND - Round 1: received 2 neighbor randoms 
+[8:42:15 PM.134] Node4 - ROUND - Round 1: Did not win (myRandom=0.23240113887874247 <= maxNeighbor=0.3062982424927124). 
+[8:42:15 PM.936] Node4 - ROUND - Round 2: my random = 0.21783822907758155 
+[8:42:15 PM.943] Node4 - RANDOM - Broadcasted random for round 2 to 2 neighbors 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:42:17 PM.466] Node4 - ROUND - Round 2: received 0 neighbor randoms 
+[8:42:17 PM.466] Node4 - WIN - Round 2: I WON (myRandom=0.21783822907758155 > maxNeighbor=-Infinity). Join MIS. 
+[8:42:17 PM.470] Node4 - MIS-NOTIFY - Notified 2 neighbors of MIS membership 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:42:19 PM.774] Node4 - WAIT - Not candidate, waiting for round 3 
+[8:42:20 PM.778] Node4 - WAIT - Not candidate, waiting for round 4 
+[8:42:21 PM.779] Node4 - WAIT - Not candidate, waiting for round 5 
+[8:42:22 PM.781] Node4 - WAIT - Not candidate, waiting for round 6 
+[8:42:23 PM.784] Node4 - WAIT - Not candidate, waiting for round 7 
+[8:42:24 PM.785] Node4 - WAIT - Not candidate, waiting for round 8 
+[8:42:25 PM.788] Node4 - WAIT - Not candidate, waiting for round 9 
+[8:42:26 PM.790] Node4 - WAIT - Not candidate, waiting for round 10 
+[8:42:26 PM.791] Node4 - COMPLETE - Terminated after 10 rounds. inMIS=true. localMIS=Node4 

@@ -1,0 +1,6 @@
+{
+  "submittedValues": [100,200,300],
+  "timestamp": 1786374563,
+  "count": 3,
+  "algorithm": "PBFT"
+}

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>PBFT Client Simulation</title>
+</head>
+<body>
+  <h2>PBFT Client - Send Operation</h2>
+  <form id="pbftForm">
+    <label>
+      Operation:
+      <input type="text" id="operation" value="transfer" />
+    </label>
+    <br>
+    <label>
+      Value:
+      <input type="number" id="value" value="42" />
+    </label>
+    <br>
+    <button type="submit">Send Request</button>
+  </form>
+  <div id="result"></div>
+
+  <script>
+    document.getElementById('pbftForm').onsubmit = async function(e) {
+      e.preventDefault();
+      const operation = document.getElementById('operation').value;
+      const value = Number(document.getElementById('value').value);
+
+      document.getElementById('result').textContent = "Sending...";
+
+      try {
+        const response = await fetch("http://localhost:3001/api/client", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({operation, value})
+        });
+        const data = await response.json();
+        document.getElementById('result').textContent = "Server response: " + JSON.stringify(data);
+      } catch (err) {
+        document.getElementById('result').textContent = "Error: " + err;
+      }
+    }
+  </script>
+</body>
+</html>

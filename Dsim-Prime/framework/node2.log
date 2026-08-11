@@ -1,0 +1,31 @@
+Node Node2 behavior: honest
+[8:41:24 PM.639] Node2 - INIT - Node context set 
+Prime Node started at ID=Node2, PORT=3002
+Server listening on port 3002
+[8:41:30 PM.954] Node2 - PREPARE - Sent prepare for seq 1 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:31 PM.11] Node2 - COMMIT - Sent commit for seq 1 
+[8:41:31 PM.13] Node2 - EXECUTION - Executed request seq 1 with value 100 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:33 PM.928] Node2 - PREPARE - Sent prepare for seq 2 
+[8:41:33 PM.964] Node2 - COMMIT - Sent commit for seq 2 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:33 PM.967] Node2 - EXECUTION - Executed request seq 2 with value 200 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:37 PM.69] Node2 - PREPARE - Sent prepare for seq 3 
+[8:41:37 PM.109] Node2 - COMMIT - Sent commit for seq 3 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:37 PM.111] Node2 - EXECUTION - Executed request seq 3 with value 300 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }

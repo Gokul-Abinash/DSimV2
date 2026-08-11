@@ -1,0 +1,37 @@
+Node Node1 behavior: honest
+[8:41:24 PM.639] Node1 - INIT - Node context set 
+Prime Node started at ID=Node1, PORT=3001
+Server listening on port 3001
+[8:41:30 PM.773] Node1 - CLIENT - Request received {"operation":"TX","id":1,"value":100}
+{ operation: 'TX', id: 1, value: 100 }
+[8:41:30 PM.887] Node1 - PRE-PREPARE - Sent pre-prepare for seq 1 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:31 PM.13] Node1 - COMMIT - Sent commit for seq 1 
+[8:41:31 PM.16] Node1 - EXECUTION - Executed request seq 1 with value 100 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:33 PM.826] Node1 - CLIENT - Request received {"operation":"TX","id":2,"value":200}
+{ operation: 'TX', id: 2, value: 200 }
+[8:41:33 PM.895] Node1 - PRE-PREPARE - Sent pre-prepare for seq 2 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:33 PM.967] Node1 - COMMIT - Sent commit for seq 2 
+[8:41:33 PM.967] Node1 - EXECUTION - Executed request seq 2 with value 200 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:36 PM.875] Node1 - CLIENT - Request received {"operation":"TX","id":3,"value":300}
+{ operation: 'TX', id: 3, value: 300 }
+[8:41:36 PM.940] Node1 - PRE-PREPARE - Sent pre-prepare for seq 3 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:41:37 PM.109] Node1 - COMMIT - Sent commit for seq 3 
+[8:41:37 PM.110] Node1 - EXECUTION - Executed request seq 3 with value 300 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }

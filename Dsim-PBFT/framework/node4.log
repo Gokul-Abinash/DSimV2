@@ -1,0 +1,61 @@
+[Node4] Loading honest protocol
+Node Node4 behavior: honest
+[8:39:17 PM.280] Node4 - INIT - Node initialized as Node4, f=1 
+PBFT Node started at ID=Node4, PORT=3004
+Node Node4 behavior: honest
+[8:39:17 PM.359] Node4 - INIT - Node initialized as Node4, f=1 
+Server listening on port 3004
+[8:39:23 PM.554] Node4 - PRE-PREPARE - Accepted PRE-PREPARE for req#1 from Node1 
+[LATENCY] Node4 -> A: 0ms delay
+[LATENCY] Node4 -> B: 0ms delay
+[LATENCY] Node4 -> C: 0ms delay
+[8:39:23 PM.618] Node4 - PREPARE - Broadcasted PREPARE for req #1 
+[8:39:23 PM.623] Node4 - PREPARE - Accepted PREPARE for req #1 from Node1 {"totalPrepares":1}
+[8:39:23 PM.631] Node4 - PREPARE - Accepted PREPARE for req #1 from Node3 {"totalPrepares":2}
+[8:39:23 PM.631] Node4 - PREPARE - Request #1 is now prepared. 
+[LATENCY] Node4 -> A: 0ms delay
+[LATENCY] Node4 -> B: 0ms delay
+[LATENCY] Node4 -> C: 0ms delay
+[8:39:23 PM.675] Node4 - COMMIT - Broadcasted COMMIT for req #1 
+[8:39:23 PM.681] Node4 - COMMIT - Accepted COMMIT for req #1 from Node1 {"totalCommits":1}
+[8:39:23 PM.683] Node4 - PREPARE - Accepted PREPARE for req #1 from Node2 {"totalPrepares":3}
+[8:39:23 PM.686] Node4 - COMMIT - Accepted COMMIT for req #1 from Node3 {"totalCommits":2}
+[8:39:23 PM.688] Node4 - COMMIT - Accepted COMMIT for req #1 from Node2 {"totalCommits":3}
+[8:39:23 PM.688] Node4 - COMMIT - Request #1 is now committed_local. 
+[8:39:23 PM.700] Node4 - EXECUTION - Executed request #1 in order ✅ 
+[8:39:26 PM.553] Node4 - PRE-PREPARE - Accepted PRE-PREPARE for req#2 from Node1 
+[LATENCY] Node4 -> A: 0ms delay
+[LATENCY] Node4 -> B: 0ms delay
+[LATENCY] Node4 -> C: 0ms delay
+[8:39:26 PM.586] Node4 - PREPARE - Broadcasted PREPARE for req #2 
+[8:39:26 PM.588] Node4 - PREPARE - Accepted PREPARE for req #2 from Node1 {"totalPrepares":1}
+[8:39:26 PM.590] Node4 - PREPARE - Accepted PREPARE for req #2 from Node3 {"totalPrepares":2}
+[8:39:26 PM.590] Node4 - PREPARE - Request #2 is now prepared. 
+[LATENCY] Node4 -> A: 0ms delay
+[LATENCY] Node4 -> B: 0ms delay
+[LATENCY] Node4 -> C: 0ms delay
+[8:39:26 PM.624] Node4 - COMMIT - Broadcasted COMMIT for req #2 
+[8:39:26 PM.626] Node4 - PREPARE - Accepted PREPARE for req #2 from Node2 {"totalPrepares":3}
+[8:39:26 PM.628] Node4 - COMMIT - Accepted COMMIT for req #2 from Node2 {"totalCommits":1}
+[8:39:26 PM.631] Node4 - COMMIT - Accepted COMMIT for req #2 from Node3 {"totalCommits":2}
+[8:39:26 PM.633] Node4 - COMMIT - Accepted COMMIT for req #2 from Node1 {"totalCommits":3}
+[8:39:26 PM.633] Node4 - COMMIT - Request #2 is now committed_local. 
+[8:39:26 PM.645] Node4 - EXECUTION - Executed request #2 in order ✅ 
+[8:39:29 PM.581] Node4 - PRE-PREPARE - Accepted PRE-PREPARE for req#3 from Node1 
+[LATENCY] Node4 -> A: 0ms delay
+[LATENCY] Node4 -> B: 0ms delay
+[LATENCY] Node4 -> C: 0ms delay
+[8:39:29 PM.613] Node4 - PREPARE - Broadcasted PREPARE for req #3 
+[8:39:29 PM.614] Node4 - PREPARE - Accepted PREPARE for req #3 from Node1 {"totalPrepares":1}
+[8:39:29 PM.616] Node4 - PREPARE - Accepted PREPARE for req #3 from Node3 {"totalPrepares":2}
+[8:39:29 PM.616] Node4 - PREPARE - Request #3 is now prepared. 
+[LATENCY] Node4 -> A: 0ms delay
+[LATENCY] Node4 -> B: 0ms delay
+[LATENCY] Node4 -> C: 0ms delay
+[8:39:29 PM.651] Node4 - COMMIT - Broadcasted COMMIT for req #3 
+[8:39:29 PM.653] Node4 - PREPARE - Accepted PREPARE for req #3 from Node2 {"totalPrepares":3}
+[8:39:29 PM.655] Node4 - COMMIT - Accepted COMMIT for req #3 from Node2 {"totalCommits":1}
+[8:39:29 PM.658] Node4 - COMMIT - Accepted COMMIT for req #3 from Node3 {"totalCommits":2}
+[8:39:29 PM.659] Node4 - COMMIT - Accepted COMMIT for req #3 from Node1 {"totalCommits":3}
+[8:39:29 PM.659] Node4 - COMMIT - Request #3 is now committed_local. 
+[8:39:29 PM.672] Node4 - EXECUTION - Executed request #3 in order ✅ 

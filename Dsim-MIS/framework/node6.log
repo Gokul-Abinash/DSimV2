@@ -1,0 +1,25 @@
+[8:42:07 PM.78] Node6 - INIT - Node context set. Starting candidate=true 
+MIS Node started at ID=Node6, PORT=3006
+Server listening on port 3006
+[8:42:13 PM.647] Node6 - RANDOM - Stored random from Node5 for round 1: 0.10414329268099487 
+[8:42:13 PM.660] Node6 - START - Starting Luby MIS algorithm 
+[8:42:13 PM.661] Node6 - ROUND - Round 1: my random = 0.1921813347515563 
+[8:42:13 PM.668] Node6 - RANDOM - Broadcasted random for round 1 to 2 neighbors 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:42:13 PM.700] Node6 - RANDOM - Stored random from Node7 for round 1: 0.017755276424710642 
+[8:42:15 PM.194] Node6 - ROUND - Round 1: received 2 neighbor randoms 
+[8:42:15 PM.195] Node6 - WIN - Round 1: I WON (myRandom=0.1921813347515563 > maxNeighbor=0.10414329268099487). Join MIS. 
+[8:42:15 PM.199] Node6 - MIS-NOTIFY - Notified 2 neighbors of MIS membership 
+Response from IP 127.0.0.1: { ok: true }
+Response from IP 127.0.0.1: { ok: true }
+[8:42:17 PM.503] Node6 - WAIT - Not candidate, waiting for round 2 
+[8:42:18 PM.504] Node6 - WAIT - Not candidate, waiting for round 3 
+[8:42:19 PM.506] Node6 - WAIT - Not candidate, waiting for round 4 
+[8:42:20 PM.508] Node6 - WAIT - Not candidate, waiting for round 5 
+[8:42:21 PM.510] Node6 - WAIT - Not candidate, waiting for round 6 
+[8:42:22 PM.512] Node6 - WAIT - Not candidate, waiting for round 7 
+[8:42:23 PM.515] Node6 - WAIT - Not candidate, waiting for round 8 
+[8:42:24 PM.517] Node6 - WAIT - Not candidate, waiting for round 9 
+[8:42:25 PM.519] Node6 - WAIT - Not candidate, waiting for round 10 
+[8:42:25 PM.520] Node6 - COMPLETE - Terminated after 10 rounds. inMIS=true. localMIS=Node6 
