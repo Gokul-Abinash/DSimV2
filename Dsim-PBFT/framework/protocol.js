@@ -123,6 +123,9 @@ function handleClientRequest(request, myNodeID) {
   // Queue request for sequential processing
   PBFTState.pendingRequests.push({ ...request, submitTime: Date.now() });
   logPBFTEvent({ node: myNodeID, phase: "CLIENT", action: `Request queued for processing`, details: request });
+  if (myNodeID === getPrimary(PBFTState.view)) {
+    processNextRequest();
+  }
 }
 
 const MAX_IN_FLIGHT = 5; // Window of maximum concurrent in-flight sequences
@@ -235,6 +238,9 @@ function executeInOrder() {
     logEntry.executed = true;
     logPBFTEvent({node: myNodeID, phase: "EXECUTION", action: `Executed request #${seq} in order ✅`});
     PBFTState.nextExecuteSeq++;
+    if (myNodeID === getPrimary(PBFTState.view)) {
+      setImmediate(processNextRequest);
+    }
   }
 }
 
@@ -377,6 +383,7 @@ function handlePBFTMessage(msg, myNodeID) {
     if (isCommittedLocal(logEntry) && !logEntry.committed_local) {
       logEntry.committed_local = true;
       logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Request #${seq} is now committed_local.`});
+      executeInOrder();
     }
   }
 }

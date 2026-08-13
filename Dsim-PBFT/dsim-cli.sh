@@ -84,8 +84,8 @@ run_tests() {
     echo "Submitting PBFT test transactions to Primary ($PRIMARY_URL)..."
     
     local custom_values=""
-    local tps_count=""
-    local tps_concurrency="5"
+    local count=""
+    local concurrency="5"
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -94,11 +94,11 @@ run_tests() {
                 shift 2
                 ;;
             --count)
-                tps_count="$2"
+                count="$2"
                 shift 2
                 ;;
             --concurrency)
-                tps_concurrency="$2"
+                concurrency="$2"
                 shift 2
                 ;;
             *)
@@ -107,10 +107,10 @@ run_tests() {
         esac
     done
     
-    if [ -n "$tps_count" ]; then
-        echo "Running TPS test with $tps_count transactions..."
-        cd "$FRAMEWORK_DIR" || exit 1
-        node test_pbft_TPS.js "$tps_count" "$tps_concurrency" "$PRIMARY_URL"
+    if [ -n "$count" ]; then
+        echo "Running load test with $count transactions on PBFT..."
+        cd "$SCRIPT_DIR/.." || exit 1
+        node benchmark-metrics.js pbft --requests "$count" --concurrency "$concurrency"
         return
     fi
     

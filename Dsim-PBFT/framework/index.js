@@ -76,7 +76,6 @@ app.get('/api/pbft-commit-log', (req, res) => {
 // To simulate: client triggers consensus by POSTing to this node's /api/client
 app.post('/api/client', (req, res) => {
   protocol.handleClientRequest(req.body, myNodeID);
-  console.log(req.body);
   res.json({ ok: true, msg: "Request handled" });
 });
 
