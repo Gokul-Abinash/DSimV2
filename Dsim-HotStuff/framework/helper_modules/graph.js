@@ -3,70 +3,44 @@ const os = require('os');
 
 // Graph constructor
 const { Graph } = graphlib;
-// Undirected graph
+// Undirected graph for full-mesh communication
 const graph = new Graph({ directed: false });
 
-// Auto-generated topology: 8 nodes, full topology
-// Deployment: localhost (All nodes on localhost (development/testing))
-
-// Nodes
-graph.setNode('Node1');
-graph.setNode('Node2');
-graph.setNode('Node3');
-graph.setNode('Node4');
-graph.setNode('Node5');
-graph.setNode('Node6');
-graph.setNode('Node7');
-graph.setNode('Node8');
-
-// Edges
-graph.setEdge('Node1', 'Node2');
-graph.setEdge('Node1', 'Node3');
-graph.setEdge('Node1', 'Node4');
-graph.setEdge('Node1', 'Node5');
-graph.setEdge('Node1', 'Node6');
-graph.setEdge('Node1', 'Node7');
-graph.setEdge('Node1', 'Node8');
-graph.setEdge('Node2', 'Node3');
-graph.setEdge('Node2', 'Node4');
-graph.setEdge('Node2', 'Node5');
-graph.setEdge('Node2', 'Node6');
-graph.setEdge('Node2', 'Node7');
-graph.setEdge('Node2', 'Node8');
-graph.setEdge('Node3', 'Node4');
-graph.setEdge('Node3', 'Node5');
-graph.setEdge('Node3', 'Node6');
-graph.setEdge('Node3', 'Node7');
-graph.setEdge('Node3', 'Node8');
-graph.setEdge('Node4', 'Node5');
-graph.setEdge('Node4', 'Node6');
-graph.setEdge('Node4', 'Node7');
-graph.setEdge('Node4', 'Node8');
-graph.setEdge('Node5', 'Node6');
-graph.setEdge('Node5', 'Node7');
-graph.setEdge('Node5', 'Node8');
-graph.setEdge('Node6', 'Node7');
-graph.setEdge('Node6', 'Node8');
-graph.setEdge('Node7', 'Node8');
-
-// Node metadata with IP and Port
-const nodeIPsArray = [
-  { 'Node1': { ip: "127.0.0.1", port: 3001, source: true } },
-  { 'Node2': { ip: "127.0.0.1", port: 3002, source: false } },
-  { 'Node3': { ip: "127.0.0.1", port: 3003, source: false } },
-  { 'Node4': { ip: "127.0.0.1", port: 3004, source: false } },
-  { 'Node5': { ip: "127.0.0.1", port: 3005, source: false } },
-  { 'Node6': { ip: "127.0.0.1", port: 3006, source: false } },
-  { 'Node7': { ip: "127.0.0.1", port: 3007, source: false } },
-  { 'Node8': { ip: "127.0.0.1", port: 3008, source: false } }
+// 4 Machines x 16 Nodes per machine = 64 Nodes
+const MACHINES = [
+  { ip: "10.0.1.11", startNode: 1, endNode: 16 },
+  { ip: "10.0.1.12", startNode: 17, endNode: 32 },
+  { ip: "10.0.1.13", startNode: 33, endNode: 48 },
+  { ip: "10.0.1.14", startNode: 49, endNode: 64 }
 ];
 
-// Assign metadata
-nodeIPsArray.forEach(nodeObj => {
-  const nodeName = Object.keys(nodeObj)[0];
-  const { ip, port, source } = nodeObj[nodeName];
-  graph.setNode(nodeName, { ip, port, source });
+const BASE_PORT = 3001;
+const PORTS_PER_MACHINE = 16;
+
+// Node metadata with IP and Port
+const nodeIPsArray = [];
+
+MACHINES.forEach(machine => {
+  for (let i = machine.startNode; i <= machine.endNode; i++) {
+    const nodeName = `Node${i}`;
+    const portOffset = (i - machine.startNode);
+    const port = BASE_PORT + portOffset;
+    const isSource = (i === 1); // Node1 is the default primary / leader
+
+    graph.setNode(nodeName, { ip: machine.ip, port, source: isSource });
+    nodeIPsArray.push({
+      [nodeName]: { ip: machine.ip, port, source: isSource }
+    });
+  }
 });
+
+// Full Mesh Topology: Set edges between all pairs of nodes
+const allNodeNames = nodeIPsArray.map(obj => Object.keys(obj)[0]);
+for (let i = 0; i < allNodeNames.length; i++) {
+  for (let j = i + 1; j < allNodeNames.length; j++) {
+    graph.setEdge(allNodeNames[i], allNodeNames[j]);
+  }
+}
 
 // Get neighbor IPs and ports
 function getNeighborIPPort(nodeName) {
@@ -76,9 +50,8 @@ function getNeighborIPPort(nodeName) {
   }
 
   const neighbors = graph.neighbors(nodeName);
-
   if (!neighbors || neighbors.length === 0) {
-    return `Node ${nodeName} has no neighbors.`;
+    return { IPArray: [], PortArray: [] };
   }
 
   let IPArray = [];
@@ -109,7 +82,7 @@ function isIPBelongToNode(ipAddress) {
   return -1;
 }
 
-// Get local IPv4 address
+// Get local IPv4 address of the EC2 instance
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
@@ -122,18 +95,23 @@ function getLocalIP() {
   return null;
 }
 
-// Find node by local IP
-function findCurrentNode() {
+// Find node matching the local AWS private IP and Port
+function findCurrentNode(port) {
   const myIP = getLocalIP();
+  const targetPort = port ? Number(port) : null;
+
   for (const node of graph.nodes()) {
-    if (graph.node(node).ip === myIP) {
-      return node;
+    const nodeData = graph.node(node);
+    if (nodeData.ip === myIP) {
+      if (!targetPort || Number(nodeData.port) === targetPort) {
+        return node;
+      }
     }
   }
-  return "check your ip current address matching ip in graph node";
+  return null;
 }
 
-// Find node by port (coerces port to number)
+// Find node by port fallback
 function findCurrentNodeByPORT(PORT) {
   if (typeof PORT === 'string') PORT = Number(PORT);
 
@@ -143,10 +121,13 @@ function findCurrentNodeByPORT(PORT) {
       return node;
     }
   }
-  return "check your ip current address matching ip in graph node";
+  return null;
 }
 
 module.exports = {
+  MACHINES,
+  BASE_PORT,
+  PORTS_PER_MACHINE,
   nodeIPsArray,
   graph,
   getNeighborIPPort,

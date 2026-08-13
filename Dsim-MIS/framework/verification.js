@@ -2,33 +2,42 @@
 
 const fs = require('fs');
 const axios = require('axios');
+const graph = require('./helper_modules/graph.js');
 
-async function collectNodeData(ports) {
+async function collectNodeData() {
   const nodeData = [];
+  const nodes = graph.nodeIPsArray;
   
-  for (const port of ports) {
+  console.log(`Querying ${nodes.length} nodes across cluster...`);
+  
+  for (const nodeObj of nodes) {
+    const nodeId = Object.keys(nodeObj)[0];
+    const { ip, port } = nodeObj[nodeId];
+    
     try {
-      const statusResponse = await axios.get(`http://localhost:${port}/api/status`, { timeout: 5000 });
-      const resultsResponse = await axios.get(`http://localhost:${port}/api/mis-results`, { timeout: 5000 });
-      const logResponse = await axios.get(`http://localhost:${port}/api/mis-log`, { timeout: 5000 });
+      const statusResponse = await axios.get(`http://${ip}:${port}/api/status`, { timeout: 3000 });
+      const resultsResponse = await axios.get(`http://${ip}:${port}/api/mis-results`, { timeout: 3000 });
+      const logResponse = await axios.get(`http://${ip}:${port}/api/mis-log`, { timeout: 3000 });
       
       nodeData.push({
         port,
-        nodeId: statusResponse.data.nodeID,
+        ip,
+        nodeId: statusResponse.data.nodeID || nodeId,
         status: statusResponse.data,
         results: resultsResponse.data || [],
         logs: logResponse.data || [],
         running: true
       });
     } catch (error) {
-      const nodeId = String.fromCharCode(65 + ports.indexOf(port));
       nodeData.push({
         port,
+        ip,
         nodeId,
         status: null,
         results: [],
         logs: [],
-        running: false
+        running: false,
+        error: error.message
       });
     }
   }
@@ -37,24 +46,16 @@ async function collectNodeData(ports) {
 }
 
 function verifyIndependence(nodeData) {
-  // Load graph to check adjacency
-  let graph;
-  try {
-    graph = require('./helper_modules/graph.js');
-  } catch (error) {
-    return { passed: false, details: "Cannot load graph structure" };
-  }
-  
   // Get MIS nodes
   const misNodes = nodeData
-    .filter(node => node.results.length > 0 && node.results[0].inMIS)
+    .filter(node => node.running && node.results.length > 0 && node.results[0].inMIS)
     .map(node => node.nodeId);
   
   if (misNodes.length === 0) {
     return { passed: false, details: "No nodes in MIS" };
   }
   
-  // Check independence - no two MIS nodes should be adjacent
+  // Check independence - in full mesh, MIS must have size 1; in general graph, no two MIS nodes are adjacent
   for (let i = 0; i < misNodes.length; i++) {
     for (let j = i + 1; j < misNodes.length; j++) {
       const node1 = misNodes[i];
@@ -69,36 +70,31 @@ function verifyIndependence(nodeData) {
           };
         }
       } catch (error) {
-        // Continue checking other pairs
+        // Continue checking
       }
     }
   }
   
   return { 
     passed: true, 
-    details: `Independence verified: ${misNodes.length} MIS nodes, no adjacent pairs`,
+    details: `Independence verified: ${misNodes.length} MIS node(s) [${misNodes.join(', ')}], no adjacent pairs`,
     misNodes 
   };
 }
 
 function verifyMaximality(nodeData) {
-  // Load graph to check maximality
-  let graph;
-  try {
-    graph = require('./helper_modules/graph.js');
-  } catch (error) {
-    return { passed: false, details: "Cannot load graph structure" };
-  }
-  
   const misNodes = nodeData
-    .filter(node => node.results.length > 0 && node.results[0].inMIS)
+    .filter(node => node.running && node.results.length > 0 && node.results[0].inMIS)
     .map(node => node.nodeId);
   
   const nonMisNodes = nodeData
-    .filter(node => node.results.length === 0 || !node.results[0].inMIS)
+    .filter(node => node.running && (node.results.length === 0 || !node.results[0].inMIS))
     .map(node => node.nodeId);
   
-  // Check if any non-MIS node can be added (maximality)
+  if (misNodes.length === 0) {
+    return { passed: false, details: "Cannot verify maximality: MIS is empty" };
+  }
+  
   for (const candidate of nonMisNodes) {
     try {
       const neighbors = graph.graph.neighbors(candidate) || [];
@@ -111,37 +107,34 @@ function verifyMaximality(nodeData) {
         };
       }
     } catch (error) {
-      // Continue checking other candidates
+      // Continue checking
     }
   }
   
   return { 
     passed: true, 
-    details: `Maximality verified: all non-MIS nodes have at least one MIS neighbor` 
+    details: `Maximality verified: all ${nonMisNodes.length} non-MIS nodes have at least one MIS neighbor` 
   };
 }
 
 function verifyTermination(nodeData) {
   const runningNodes = nodeData.filter(node => node.running);
-  const completedNodes = nodeData.filter(node => 
-    node.running && node.results.length > 0
-  );
   
   if (runningNodes.length === 0) {
     return { passed: false, details: "No nodes are running" };
   }
   
-  const terminatedNodes = nodeData.filter(node => 
-    node.running && node.status && (node.status.terminated || !node.status.running)
+  const completedNodes = nodeData.filter(node => 
+    node.running && node.results.length > 0
   );
   
-  const terminationRate = terminatedNodes.length / runningNodes.length;
+  const terminationRate = completedNodes.length / runningNodes.length;
   
   return {
     passed: terminationRate >= 0.8,
-    details: `${terminatedNodes.length}/${runningNodes.length} nodes terminated (${(terminationRate * 100).toFixed(1)}% completion)`,
+    details: `${completedNodes.length}/${runningNodes.length} nodes terminated (${(terminationRate * 100).toFixed(1)}% completion)`,
     terminationRate,
-    completedNodes: terminatedNodes.length
+    completedNodes: completedNodes.length
   };
 }
 
@@ -151,27 +144,42 @@ async function main() {
     console.log('Algorithm: Luby\'s Maximum Independent Set');
     console.log('');
     
-    // Collect node data
-    const ports = [3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008];
-    const nodeData = await collectNodeData(ports);
+    const nodeData = await collectNodeData();
     const runningNodes = nodeData.filter(node => node.running);
     
-    console.log(`Nodes: ${runningNodes.length}/${ports.length} running`);
+    // Per-server breakdown
+    console.log('\n--- Per-Server Node Health Breakdown ---');
+    for (const machine of graph.MACHINES) {
+      const serverNodes = nodeData.filter(n => n.ip === machine.ip);
+      const onlineCount = serverNodes.filter(n => n.running).length;
+      const totalCount = serverNodes.length;
+      const statusIcon = onlineCount === totalCount ? '✅' : '⚠️ ';
+      console.log(`${statusIcon} Server ${machine.ip}: ${onlineCount}/${totalCount} nodes online`);
+      if (onlineCount < totalCount) {
+        const offline = serverNodes.filter(n => !n.running).map(n => `${n.nodeId}:${n.port}`).join(', ');
+        console.log(`   Offline: ${offline}`);
+      }
+    }
+    
+    console.log(`\nCluster Status: ${runningNodes.length}/${nodeData.length} nodes running`);
     console.log('');
     
-    // Show MIS results
-    console.log('MIS Results:');
-    nodeData.forEach(node => {
+    // Show sample MIS results
+    console.log('Sample MIS Results:');
+    nodeData.slice(0, 16).forEach(node => {
       if (node.running && node.results.length > 0) {
         const result = node.results[0];
-        const status = result.inMIS ? '🟢 IN MIS' : '🔴 NOT IN MIS';
-        console.log(`  ${status} Node ${node.nodeId} (Round ${result.round}, Random: ${result.randomValue.toFixed(4)})`);
+        const status = result.inMIS ? '🟢 IN MIS' : '⚪ NOT IN MIS';
+        console.log(`  ${status} ${node.nodeId} (${node.ip}:${node.port}) - Round ${result.round}, Random: ${(result.randomValue || 0).toFixed(4)}`);
       } else if (node.running) {
-        console.log(`  ⚪ Node ${node.nodeId} (No result yet)`);
+        console.log(`  ⚪ ${node.nodeId} (No result yet)`);
       } else {
-        console.log(`  🔴 Node ${node.nodeId} (STOPPED)`);
+        console.log(`  🔴 ${node.nodeId} (STOPPED)`);
       }
     });
+    if (nodeData.length > 16) {
+      console.log(`  ... and ${nodeData.length - 16} more nodes`);
+    }
     console.log('');
     
     // Verify MIS properties
@@ -179,6 +187,7 @@ async function main() {
     const maximality = verifyMaximality(nodeData);
     const termination = verifyTermination(nodeData);
     
+    console.log('MIS Properties:');
     console.log(`${independence.passed ? '✅' : '❌'} Independence: ${independence.passed ? 'PASS' : 'FAIL'}`);
     console.log(`   ${independence.details}`);
     console.log('');
@@ -191,7 +200,6 @@ async function main() {
     console.log(`   ${termination.details}`);
     console.log('');
     
-    // Summary
     const allPassed = independence.passed && maximality.passed && termination.passed;
     console.log(`=== Summary ===`);
     console.log(`MIS verification: ${allPassed ? '✅ PASS' : '❌ FAIL'}`);

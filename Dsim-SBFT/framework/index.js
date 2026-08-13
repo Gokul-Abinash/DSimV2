@@ -9,29 +9,32 @@ app.use(bodyParser.json());
 
 const PORT = Number(process.argv[2]);
 if (!PORT) {
-  console.error("Provide a PORT: node index.js 3001");
+  console.error("Provide a PORT: node index.js 3001 [NodeID]");
   process.exit(1);
 }
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(__dirname));   // to handle the html pages
+app.use(express.static(__dirname));
 
+const explicitNodeID = process.argv[3];
+const myNodeID = explicitNodeID || graph.findCurrentNode(PORT) || graph.findCurrentNodeByPORT(PORT);
 
-const myNodeID = graph.findCurrentNodeByPORT(PORT);
+if (!myNodeID) {
+  console.error(`Could not determine Node ID for PORT=${PORT} on local IP=${graph.getLocalIP()}`);
+  process.exit(1);
+}
+
 const protocol = protocolLoader.loadProtocol(myNodeID);
 protocol.setNodeContext(myNodeID);
-console.log(`SBFT Node started at ID=${myNodeID}, PORT=${PORT}`);
-
-// Setting the SBFT protocol context
-protocol.setNodeContext(myNodeID);
+console.log(`SBFT Node started at ID=${myNodeID}, IP=${graph.getLocalIP()}, PORT=${PORT}`);
 
 // View status
 app.get('/', (req, res) => {
   res.send(`Node ${myNodeID}, Port ${PORT} - SBFT ready`);
 });
+
 app.get('/api/status', (req, res) => {
-  // Load Byzantine configuration to determine node behavior
   let behavior = 'honest';
   let byzantineConfig = {};
   
@@ -58,19 +61,17 @@ app.post('/api/sbft', (req, res) => {
   res.json({ ok: true });
 });
 
-// Keep PBFT endpoint for compatibility
+// Compatibility PBFT endpoint
 app.post('/api/pbft', (req, res) => {
   protocol.handleSBFTMessage(req.body, myNodeID);
   res.json({ ok: true });
 });
 
-
-// SBFT log viewing routes:
+// SBFT log viewing routes
 app.get('/api/sbft-log', (req, res) => {
   res.json(protocol.getSBFTNodeLog());
 });
 
-// Keep PBFT endpoint for compatibility
 app.get('/api/pbft-log', (req, res) => {
   res.json(protocol.getSBFTNodeLog());
 });
@@ -80,12 +81,11 @@ app.get('/api/sbft-commit-log', (req, res) => {
   res.json(protocol.getSBFTCommitLog());
 });
 
-// Keep PBFT endpoint for compatibility
 app.get('/api/pbft-commit-log', (req, res) => {
   res.json(protocol.getSBFTCommitLog());
 });
 
-// To simulate: client triggers consensus by POSTing to this node's /api/client
+// Client request endpoint
 app.post('/api/client', (req, res) => {
   protocol.handleClientRequest(req.body, myNodeID);
   console.log(req.body);
@@ -96,4 +96,3 @@ app.post('/api/client', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
 });
-

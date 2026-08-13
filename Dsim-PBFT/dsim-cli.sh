@@ -1,15 +1,19 @@
 #!/bin/bash
 
-# Auto-generated CLI for 8 nodes, full topology
-# Algorithm: PBFT
+# Multi-Server Distributed PBFT CLI
+# 4 Machines x 16 Nodes = 64 Nodes Cluster
+# Ports per machine: 3001 to 3016
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRAMEWORK_DIR="$SCRIPT_DIR/framework"
-PORTS=(3001 3002 3003 3004 3005 3006 3007 3008)
+PORTS=(3001 3002 3003 3004 3005 3006 3007 3008 3009 3010 3011 3012 3013 3014 3015 3016)
 PID_DIR="$FRAMEWORK_DIR/pids"
+PRIMARY_URL="http://10.0.1.11:3001/api/client"
 
 start_nodes() {
-    echo "Starting PBFT nodes..."
+    echo "=========================================="
+    echo "Starting 16 PBFT nodes on this machine..."
+    echo "=========================================="
     
     if [ ! -d "$FRAMEWORK_DIR" ]; then
         echo "Error: Framework directory not found: $FRAMEWORK_DIR"
@@ -21,100 +25,67 @@ start_nodes() {
     
     # Stop existing nodes first
     stop_nodes
-    sleep 2
+    sleep 1
     
-    # Start nodes in background with PID tracking
-    for i in {0..7}; do
-        port=${PORTS[$i]}
-        node_id=$((i+1))
-        nohup node index.js $port $node_id > node$node_id.log 2>&1 &
-        echo $! > "$PID_DIR/node$node_id.pid"
-        echo "Started node $node_id on port $port (PID: $!)"
+    # Start 16 nodes in background
+    for port in "${PORTS[@]}"; do
+        nohup node index.js $port > "node_$port.log" 2>&1 &
+        echo $! > "$PID_DIR/node_$port.pid"
+        echo "Started node on port $port (PID: $!)"
     done
     
     sleep 3
-    echo "PBFT nodes started on ports: ${PORTS[@]}"
-    
-    # Validate nodes started successfully
-    failed=0
-    for port in "${PORTS[@]}"; do
-        if ! lsof -i :$port >/dev/null 2>&1; then
-            echo "❌ Failed to start node on port $port"
-            failed=1
-        fi
-    done
-    
-    if [ $failed -eq 0 ]; then
-        echo "✅ All nodes started successfully"
-    else
-        echo "⚠️  Some nodes failed to start"
-    fi
-    
+    echo ""
+    echo "Checking status of started nodes on this server..."
     check_status
 }
 
 stop_nodes() {
-    echo "Stopping PBFT nodes..."
+    echo "Stopping PBFT nodes on this machine..."
     
     if [ -d "$PID_DIR" ]; then
         for pid_file in "$PID_DIR"/*.pid; do
             if [ -f "$pid_file" ]; then
                 pid=$(cat "$pid_file")
                 if kill -0 "$pid" 2>/dev/null; then
-                    kill "$pid"
-                    echo "Stopped process $pid"
+                    kill "$pid" 2>/dev/null
                 fi
                 rm -f "$pid_file"
             fi
         done
-    else
-        pkill -f "node index.js" 2>/dev/null
     fi
     
-    sleep 2
-    echo "All PBFT nodes stopped."
+    pkill -f "node index.js" 2>/dev/null || true
+    sleep 1
+    echo "All PBFT nodes stopped on this machine."
 }
 
 check_status() {
-    echo "Checking node status..."
+    echo "=== Local Node Status (Ports 3001-3016) ==="
+    local running=0
     for port in "${PORTS[@]}"; do
         if lsof -i :$port >/dev/null 2>&1; then
-            node_info=$(curl -s --max-time 3 http://localhost:$port/api/status 2>/dev/null)
-            if [ $? -eq 0 ] && [ -n "$node_info" ]; then
+            running=$((running + 1))
+            node_info=$(curl -s --max-time 2 http://127.0.0.1:$port/api/status 2>/dev/null)
+            if [ -n "$node_info" ]; then
                 node_id=$(echo "$node_info" | grep -o '"nodeID":"[^"]*"' | cut -d'"' -f4)
-                behavior=$(echo "$node_info" | grep -o '"behavior":"[^"]*"' | cut -d'"' -f4)
-                is_byzantine=$(echo "$node_info" | grep -o '"isByzantine":[^,}]*' | cut -d':' -f2)
-                
-                if [ "$is_byzantine" = "true" ]; then
-                    if [ "$behavior" = "crash" ]; then
-                        echo "✅ Node $node_id on port $port: RUNNING (Crash failure)"
-                    else
-                        echo "✅ Node $node_id on port $port: RUNNING (Byzantine: $behavior)"
-                    fi
-                else
-                    echo "✅ Node $node_id on port $port: RUNNING (Honest)"
-                fi
+                echo "✅ Port $port: RUNNING -> ID: $node_id"
             else
-                echo "✅ Node on port $port: RUNNING"
+                echo "✅ Port $port: RUNNING"
             fi
         else
-            echo "❌ Node on port $port: STOPPED"
+            echo "❌ Port $port: STOPPED"
         fi
     done
+    echo "Running on this machine: $running / 16 nodes"
 }
 
 run_tests() {
-    echo "Running PBFT test transactions..."
-    
-    if ! lsof -i :${PORTS[0]} >/dev/null 2>&1; then
-        echo "Error: Primary node (port ${PORTS[0]}) is not running"
-        return 1
-    fi
+    echo "Submitting PBFT test transactions to Primary ($PRIMARY_URL)..."
     
     local custom_values=""
     local tps_count=""
-    local tps_duration=""
-    local show_tps=false
+    local tps_concurrency="5"
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -126,13 +97,9 @@ run_tests() {
                 tps_count="$2"
                 shift 2
                 ;;
-            --duration)
-                tps_duration="$2"
+            --concurrency)
+                tps_concurrency="$2"
                 shift 2
-                ;;
-            --tps)
-                show_tps=true
-                shift
                 ;;
             *)
                 shift
@@ -140,32 +107,17 @@ run_tests() {
         esac
     done
     
-    # Handle TPS testing
-    if [ "$show_tps" = true ]; then
-        node ../tps-tester.js pbft metrics
-        return
-    fi
-    
     if [ -n "$tps_count" ]; then
-        if [ -n "$tps_duration" ]; then
-            echo "Running TPS duration test: $tps_count transactions over $tps_duration seconds"
-            node ../tps-tester.js pbft duration "$tps_count" "$tps_duration"
-        else
-            echo "Running TPS burst test with $tps_count transactions"
-            node ../tps-tester.js pbft burst "$tps_count"
-        fi
+        echo "Running TPS test with $tps_count transactions..."
+        cd "$FRAMEWORK_DIR" || exit 1
+        node test_pbft_TPS.js "$tps_count" "$tps_concurrency" "$PRIMARY_URL"
         return
     fi
     
     if [ -n "$custom_values" ]; then
         IFS=',' read -ra VALUES <<< "$custom_values"
-        echo "Using custom values: $custom_values"
     else
-        VALUES=()
-        for i in $(seq 1 8); do
-            VALUES+=($((i*100)))
-        done
-        echo "Using node-scaled values: ${VALUES[*]}"
+        VALUES=(100 200 300 400 500)
     fi
     
     cat > "$FRAMEWORK_DIR/test-metadata.json" << EOF
@@ -179,67 +131,41 @@ EOF
     
     for i in "${!VALUES[@]}"; do
         value=${VALUES[$i]}
-        response=$(curl -s --max-time 10 -X POST http://localhost:${PORTS[0]}/api/client \
+        response=$(curl -s --max-time 10 -X POST "$PRIMARY_URL" \
             -H "Content-Type: application/json" \
             -d "{\"operation\": \"TX\", \"id\": $((i+1)), \"value\": $value}" 2>/dev/null)
-        echo "TX$((i+1)) (value: $value) Response: $response"
-        sleep 3
+        echo "TX$((i+1)) (value: $value) -> Primary response: $response"
+        sleep 2
     done
     
-    echo "Tests completed!"
-}
-
-show_stats() {
-    echo "=== PBFT Cluster Statistics ==="
-    echo "Topology: full, Nodes: 8"
-    echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo ""
-    
-    local total_logs=0
-    local total_commits=0
-    local running_nodes=0
-    
-    for port in "${PORTS[@]}"; do
-        echo "--- Node $port ---"
-        if lsof -i :$port >/dev/null 2>&1; then
-            running_nodes=$((running_nodes + 1))
-            echo "Status: ✅ RUNNING"
-            
-            # Get commit count
-            local commit_count=$(curl -s --max-time 5 http://localhost:$port/api/pbft-commit-log 2>/dev/null | grep -o '"committedAt"' | wc -l || echo "0")
-            total_commits=$((total_commits + commit_count))
-            echo "Committed transactions: $commit_count"
-        else
-            echo "Status: ❌ STOPPED"
-        fi
-        echo ""
-    done
-    
-    echo "=== Cluster Summary ==="
-    echo "Running nodes: $running_nodes/8"
-    echo "Total committed transactions: $total_commits"
-    echo "Average commits per node: $((total_commits / (running_nodes > 0 ? running_nodes : 1)))"
+    echo "Transactions submitted!"
 }
 
 run_verify() {
-    echo "Verifying consensus properties..."
-    if [ ! -f "$FRAMEWORK_DIR/test-metadata.json" ]; then
-        echo "❌ No test data found. Run 'test' command first."
-        return 1
-    fi
+    echo "Verifying consensus across all 64 nodes in the cluster..."
     cd "$FRAMEWORK_DIR" || exit 1
     node verification.js
+}
+
+show_stats() {
+    echo "=== PBFT Local Statistics ==="
+    for port in "${PORTS[@]}"; do
+        if lsof -i :$port >/dev/null 2>&1; then
+            local commit_count=$(curl -s --max-time 3 http://127.0.0.1:$port/api/pbft-commit-log 2>/dev/null | grep -o '"committedAt"' | wc -l || echo "0")
+            echo "Port $port commits: $commit_count"
+        fi
+    done
 }
 
 case "$1" in
     start) start_nodes ;;
     stop) stop_nodes ;;
-    test) run_tests "$@" ;;
+    test) shift; run_tests "$@" ;;
     verify) run_verify ;;
     stats) show_stats ;;
     status) check_status ;;
     *) 
         echo "Usage: $0 {start|stop|test|verify|stats|status}"
-        echo "Topology: full, Nodes: 8"
+        echo "Options for test: --count <N> --concurrency <C> | --values <100,200,300>"
         exit 1 ;;
 esac

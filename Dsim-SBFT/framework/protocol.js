@@ -22,6 +22,7 @@ function logSBFTEvent(event) {
 
 const SBFTState = {
   sequence: 0,
+  f: 1,
   log: {},
   pendingRequests: [],
   executedRequests: new Set(),
@@ -35,6 +36,7 @@ function setNodeContext(nodeID) {
   myNodeID = nodeID;
   myPrivateKey = cryptoHelper.loadPrivateKey(nodeID);
   myPublicKey = cryptoHelper.loadPublicKey(nodeID);
+  SBFTState.f = Math.floor((nodeIDs.length - 1) / 3);
   
   // Load Byzantine configuration
   try {
@@ -196,8 +198,9 @@ function processSBFTMessage(msg, myNodeID) {
     logEntry.commits.add(sender);
     logSBFTEvent({ node: myNodeID, phase: "COMMIT", action: `Accepted COMMIT for req #${seq} from ${sender}`, details: { totalCommits: logEntry.commits.size } });
 
-    // Need 3 commits for f=1 (2f+1)
-    if (logEntry.commits.size >= 3 && !logEntry.executed) {
+    // Need 2f+1 commits
+    const requiredQuorum = 2 * SBFTState.f + 1;
+    if (logEntry.commits.size >= requiredQuorum && !logEntry.executed) {
       logEntry.executed = true;
       logSBFTEvent({node: myNodeID, phase: "EXECUTION", action: `Executed request #${seq} ✅`});
       

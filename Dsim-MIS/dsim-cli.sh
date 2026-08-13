@@ -1,15 +1,18 @@
 #!/bin/bash
 
-# Auto-generated CLI for 8 nodes, full topology
-# Algorithm: MIS
+# Multi-Server Distributed MIS CLI
+# 4 Machines x 16 Nodes = 64 Nodes Cluster
+# Ports per machine: 3001 to 3016
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRAMEWORK_DIR="$SCRIPT_DIR/framework"
-PORTS=(3001 3002 3003 3004 3005 3006 3007 3008)
+PORTS=(3001 3002 3003 3004 3005 3006 3007 3008 3009 3010 3011 3012 3013 3014 3015 3016)
 PID_DIR="$FRAMEWORK_DIR/pids"
 
 start_nodes() {
-    echo "Starting MIS nodes..."
+    echo "=========================================="
+    echo "Starting 16 MIS nodes on this machine..."
+    echo "=========================================="
     
     if [ ! -d "$FRAMEWORK_DIR" ]; then
         echo "Error: Framework directory not found: $FRAMEWORK_DIR"
@@ -19,189 +22,118 @@ start_nodes() {
     cd "$FRAMEWORK_DIR" || exit 1
     mkdir -p "$PID_DIR"
     
-    # Stop existing nodes first
-    stop_nodes
-    sleep 2
+    stop_nodes >/dev/null 2>&1
+    sleep 1
     
-    # Start nodes in background with PID tracking
-    for i in {0..7}; do
-        port=${PORTS[$i]}
-        node_id=$((i+1))
-        nohup node index.js $port $node_id > node$node_id.log 2>&1 &
-        echo $! > "$PID_DIR/node$node_id.pid"
-        echo "Started node $node_id on port $port (PID: $!)"
+    for port in "${PORTS[@]}"; do
+        nohup node index.js $port > "node$port.log" 2>&1 &
+        local pid=$!
+        echo $pid > "$PID_DIR/node$port.pid"
+        echo "🟢 Started MIS node on port $port (PID: $pid)"
     done
     
+    echo ""
+    echo "Waiting for nodes to initialize..."
     sleep 3
-    echo "MIS nodes started on ports: ${PORTS[@]}"
     
-    # Validate nodes started successfully
-    failed=0
+    local running=0
     for port in "${PORTS[@]}"; do
-        if ! lsof -i :$port >/dev/null 2>&1; then
-            echo "❌ Failed to start node on port $port"
-            failed=1
+        if lsof -i :$port >/dev/null 2>&1; then
+            running=$((running + 1))
+        else
+            echo "❌ Node on port $port failed to start"
         fi
     done
     
-    if [ $failed -eq 0 ]; then
-        echo "✅ All nodes started successfully"
-    else
-        echo "⚠️  Some nodes failed to start"
-    fi
-    
-    check_status
+    echo "=========================================="
+    echo "Summary: $running / 16 nodes running on this server"
+    echo "=========================================="
 }
 
 stop_nodes() {
-    echo "Stopping MIS nodes..."
+    echo "Stopping MIS nodes on this machine..."
     
     if [ -d "$PID_DIR" ]; then
         for pid_file in "$PID_DIR"/*.pid; do
             if [ -f "$pid_file" ]; then
-                pid=$(cat "$pid_file")
-                if kill -0 "$pid" 2>/dev/null; then
-                    kill "$pid"
-                    echo "Stopped process $pid"
+                local pid=$(cat "$pid_file" 2>/dev/null)
+                if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+                    kill -9 "$pid" 2>/dev/null
                 fi
                 rm -f "$pid_file"
             fi
         done
-    else
-        pkill -f "node index.js" 2>/dev/null
     fi
     
-    sleep 2
-    echo "All MIS nodes stopped."
+    for port in "${PORTS[@]}"; do
+        local pid=$(lsof -ti :$port 2>/dev/null)
+        if [ -n "$pid" ]; then
+            kill -9 $pid 2>/dev/null
+        fi
+    done
+    
+    sleep 1
+    echo "All local MIS nodes stopped."
 }
 
 check_status() {
-    echo "Checking node status..."
+    echo "=== Local MIS Nodes Status ==="
+    local count=0
     for port in "${PORTS[@]}"; do
         if lsof -i :$port >/dev/null 2>&1; then
-            node_info=$(curl -s --max-time 3 http://localhost:$port/api/status 2>/dev/null)
-            if [ $? -eq 0 ] && [ -n "$node_info" ]; then
-                node_id=$(echo "$node_info" | grep -o '"nodeID":"[^"]*"' | cut -d'"' -f4)
-                behavior=$(echo "$node_info" | grep -o '"behavior":"[^"]*"' | cut -d'"' -f4)
-                is_byzantine=$(echo "$node_info" | grep -o '"isByzantine":[^,}]*' | cut -d':' -f2)
-                
-                if [ "$is_byzantine" = "true" ]; then
-                    if [ "$behavior" = "crash" ]; then
-                        echo "✅ Node $node_id on port $port: RUNNING (Crash failure)"
-                    else
-                        echo "✅ Node $node_id on port $port: RUNNING (Byzantine: $behavior)"
-                    fi
-                else
-                    echo "✅ Node $node_id on port $port: RUNNING (Honest)"
-                fi
+            local info=$(curl -s --max-time 2 http://localhost:$port/api/status 2>/dev/null)
+            local node_id=$(echo "$info" | grep -o '"nodeID":"[^"]*"' | cut -d'"' -f4)
+            if [ -n "$node_id" ]; then
+                echo "  🟢 Port $port: RUNNING (ID: $node_id)"
             else
-                echo "✅ Node on port $port: RUNNING"
+                echo "  🟢 Port $port: RUNNING"
             fi
+            count=$((count + 1))
         else
-            echo "❌ Node on port $port: STOPPED"
+            echo "  🔴 Port $port: STOPPED"
         fi
     done
+    echo ""
+    echo "Running on this machine: $count / ${#PORTS[@]} nodes"
 }
 
 run_tests() {
-    echo "Running MIS algorithm..."
+    echo "Triggering MIS algorithm execution across cluster nodes..."
     
-    if ! lsof -i :${PORTS[0]} >/dev/null 2>&1; then
-        echo "Error: Primary node (port ${PORTS[0]}) is not running"
-        return 1
-    fi
-    
-    cat > "$FRAMEWORK_DIR/test-metadata.json" << EOF
-{
-  "algorithm": "MIS",
-  "timestamp": $(date +%s),
-  "nodes": 8
-}
-EOF
-    
-    local custom_weights=""
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --weights)
-                custom_weights="$2"
-                shift 2
-                ;;
-            *)
-                shift
-                ;;
-        esac
-    done
-    
-    if [ "mis" = "mis" ]; then
-        echo "Starting MIS algorithm on all nodes..."
-        endpoint="api/start-mis"
-        algo_name="MIS"
-        payload="{}"
-    elif [ "mis" = "mstghs" ]; then
-        echo "Starting GHS MST algorithm on all nodes..."
-        endpoint="api/start-ghs"
-        algo_name="GHS"
-        payload="{}"
-    else
-        echo "Starting mis algorithm on all nodes..."
-        endpoint="api/start-mis"
-        algo_name="mis"
-        payload="{}"
-    fi
-    
+    # Trigger /api/start-mis on local nodes
     for port in "${PORTS[@]}"; do
-        response=$(curl -s --max-time 10 -X POST http://localhost:$port/$endpoint \
-            -H "Content-Type: application/json" \
-            -d '{}' 2>/dev/null)
-        echo "Node on port $port: $response"
-    done
-    
-    echo "Waiting for $algo_name algorithm to complete..."
-    sleep 8
-    
-    echo "$algo_name algorithm execution completed!"
-}
-
-show_stats() {
-    echo "=== MIS Cluster Statistics ==="
-    echo "Topology: full, Nodes: 8"
-    echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
-    echo ""
-    
-    local total_logs=0
-    local total_commits=0
-    local running_nodes=0
-    
-    for port in "${PORTS[@]}"; do
-        echo "--- Node $port ---"
         if lsof -i :$port >/dev/null 2>&1; then
-            running_nodes=$((running_nodes + 1))
-            echo "Status: ✅ RUNNING"
-            
-            # Get commit count
-            local commit_count=$(curl -s --max-time 5 http://localhost:$port/api/mis-commit-log 2>/dev/null | grep -o '"committedAt"' | wc -l || echo "0")
-            total_commits=$((total_commits + commit_count))
-            echo "Committed transactions: $commit_count"
-        else
-            echo "Status: ❌ STOPPED"
+            curl -s --max-time 3 -X POST "http://localhost:$port/api/start-mis" \
+                -H "Content-Type: application/json" > /dev/null 2>&1 &
         fi
-        echo ""
     done
     
-    echo "=== Cluster Summary ==="
-    echo "Running nodes: $running_nodes/8"
-    echo "Total committed transactions: $total_commits"
-    echo "Average commits per node: $((total_commits / (running_nodes > 0 ? running_nodes : 1)))"
+    echo "MIS algorithm triggered on local nodes. Waiting for Luby MIS convergence..."
+    sleep 5
+    echo "Done! Run 'bash dsim-cli.sh verify' to inspect MIS results across all 64 nodes."
 }
 
 run_verify() {
-    echo "Verifying consensus properties..."
-    if [ ! -f "$FRAMEWORK_DIR/test-metadata.json" ]; then
-        echo "❌ No test data found. Run 'test' command first."
-        return 1
-    fi
+    echo "Verifying MIS across all 64 nodes in the cluster..."
     cd "$FRAMEWORK_DIR" || exit 1
     node verification.js
+}
+
+show_stats() {
+    echo "=== Local MIS Node Stats ==="
+    for port in "${PORTS[@]}"; do
+        if lsof -i :$port >/dev/null 2>&1; then
+            local results=$(curl -s --max-time 2 http://localhost:$port/api/mis-results 2>/dev/null)
+            local in_mis=$(echo "$results" | grep -o '"inMIS":true' || true)
+            if [ -n "$in_mis" ]; then
+                echo "Port $port: 🟢 IN MIS"
+            else
+                echo "Port $port: ⚪ NOT IN MIS (or evaluating)"
+            fi
+        else
+            echo "Port $port: OFFLINE"
+        fi
+    done
 }
 
 case "$1" in
@@ -209,10 +141,10 @@ case "$1" in
     stop) stop_nodes ;;
     test) run_tests "$@" ;;
     verify) run_verify ;;
-    stats) show_stats ;;
     status) check_status ;;
-    *) 
-        echo "Usage: $0 {start|stop|test|verify|stats|status}"
-        echo "Topology: full, Nodes: 8"
-        exit 1 ;;
+    stats) show_stats ;;
+    *)
+        echo "Usage: $0 {start|stop|test|verify|status|stats}"
+        exit 1
+        ;;
 esac

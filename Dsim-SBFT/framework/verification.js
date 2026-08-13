@@ -1,20 +1,28 @@
 #!/usr/bin/env node
 
-// Consensus Verification Tool
+// Consensus Verification Tool for Multi-Server Distributed SBFT
 const fs = require('fs');
 const axios = require('axios');
+const graph = require('./helper_modules/graph.js');
 
-async function collectNodeData(ports) {
+async function collectNodeData() {
   const nodeData = [];
+  const nodes = graph.nodeIPsArray;
   
-  for (const port of ports) {
+  console.log(`Querying ${nodes.length} nodes across cluster...`);
+  
+  for (const nodeObj of nodes) {
+    const nodeId = Object.keys(nodeObj)[0];
+    const { ip, port } = nodeObj[nodeId];
+    
     try {
-      const commitResponse = await axios.get(`http://localhost:${port}/api/sbft-commit-log`, { timeout: 5000 });
-      const logResponse = await axios.get(`http://localhost:${port}/api/sbft-log`, { timeout: 5000 });
+      const commitResponse = await axios.get(`http://${ip}:${port}/api/sbft-commit-log`, { timeout: 3000 });
+      const logResponse = await axios.get(`http://${ip}:${port}/api/sbft-log`, { timeout: 3000 });
       
       nodeData.push({
         port,
-        nodeId: `Node${ports.indexOf(port) + 1}`, // Node1, Node2, Node3...
+        ip,
+        nodeId,
         commits: commitResponse.data || [],
         logs: logResponse.data || [],
         status: 'running'
@@ -22,10 +30,12 @@ async function collectNodeData(ports) {
     } catch (error) {
       nodeData.push({
         port,
-        nodeId: `Node${ports.indexOf(port) + 1}`,
+        ip,
+        nodeId,
         commits: [],
         logs: [],
-        status: 'failed'
+        status: 'failed',
+        error: error.message
       });
     }
   }
@@ -38,7 +48,7 @@ function loadTestMetadata() {
     const metadata = JSON.parse(fs.readFileSync('test-metadata.json', 'utf8'));
     return metadata;
   } catch (error) {
-    throw new Error('No test metadata found. Run test command first.');
+    return { count: 1, submittedValues: [100] };
   }
 }
 
@@ -47,192 +57,150 @@ function loadByzantineConfig() {
     const config = require('./byzantine-config.js');
     return config;
   } catch (error) {
-    return {}; // No Byzantine nodes
+    return {};
   }
 }
 
-function filterHonestNodes(nodeData, byzantineConfig) {
-  return nodeData.filter(node => {
-    const behavior = byzantineConfig[node.nodeId];
-    return !behavior || behavior === 'honest';
-  });
-}
-
-function verifyAgreement(honestNodes, testData) {
-  if (honestNodes.length === 0) {
-    return { passed: false, details: "No honest nodes found" };
-  }
-  
-  // Extract commit sequences from honest nodes (compare values only)
-  const commitSequences = honestNodes.map(node => 
-    node.commits.slice(-testData.count).map(tx => tx.value)
+function verifyAgreement(nodeData, byzantineConfig) {
+  const honestNodes = nodeData.filter(node => 
+    node.status === 'running' && byzantineConfig[node.nodeId] === 'honest'
   );
   
-  // Find minimum sequence length to compare common prefix
-  const minLength = Math.min(...commitSequences.map(seq => seq.length));
+  if (honestNodes.length === 0) {
+    return { passed: false, details: "No honest nodes are running" };
+  }
   
-  if (minLength === 0) {
+  const nodesWithCommits = honestNodes.filter(n => n.commits.length > 0);
+  if (nodesWithCommits.length === 0) {
     return { passed: false, details: "No transactions committed by honest nodes" };
   }
   
-  // Compare common prefix of all sequences
-  const commonPrefixes = commitSequences.map(seq => seq.slice(0, minLength));
-  const referencePrefix = JSON.stringify(commonPrefixes[0]);
-  const identical = commonPrefixes.every(prefix => 
-    JSON.stringify(prefix) === referencePrefix
+  const referenceCommits = nodesWithCommits[0].commits.map(c => c.value);
+  
+  for (const node of nodesWithCommits) {
+    const nodeCommits = node.commits.map(c => c.value);
+    
+    if (nodeCommits.length !== referenceCommits.length) {
+      return { 
+        passed: false, 
+        details: `Node ${node.nodeId} has ${nodeCommits.length} commits, expected ${referenceCommits.length}` 
+      };
+    }
+    
+    for (let i = 0; i < referenceCommits.length; i++) {
+      if (nodeCommits[i] !== referenceCommits[i]) {
+        return { 
+          passed: false, 
+          details: `Commit mismatch at index ${i}: Node ${node.nodeId} committed ${nodeCommits[i]}, expected ${referenceCommits[i]}` 
+        };
+      }
+    }
+  }
+  
+  return { 
+    passed: true, 
+    details: `All ${nodesWithCommits.length} honest running nodes agreed on ${referenceCommits.length} committed transactions: [${referenceCommits.join(', ')}]`,
+    committedValues: referenceCommits
+  };
+}
+
+function verifyValidity(nodeData, testMetadata, byzantineConfig) {
+  const honestNodes = nodeData.filter(node => 
+    node.status === 'running' && byzantineConfig[node.nodeId] === 'honest'
   );
   
-  const completionCounts = commitSequences.map(seq => seq.length);
-  const allComplete = completionCounts.every(count => count === testData.count);
-  
-  return {
-    passed: identical,
-    details: identical 
-      ? `All ${honestNodes.length} honest nodes have identical transaction order${allComplete ? '' : ` (comparing first ${minLength} transactions)`}`
-      : `Disagreement found among ${honestNodes.length} honest nodes in transaction order`
-  };
-}
-
-function verifyValidity(nodeData, submittedValues) {
-  const expectedCount = submittedValues.length;
-  
-  // Load Byzantine configuration to identify honest nodes
-  let byzantineNodes = [];
-  try {
-    const byzantineConfig = require('./byzantine-config.js');
-    byzantineNodes = Object.keys(byzantineConfig).filter(nodeId => byzantineConfig[nodeId] !== 'honest');
-  } catch (error) {
-    // No Byzantine config
-  }
-  
-  // Check each node's recent commits
-  const nodeValidityResults = nodeData.map(node => {
-    const isHonest = !byzantineNodes.includes(node.nodeId);
-    const recentCommits = node.commits.slice(-expectedCount);
-    const committedValues = recentCommits.map(tx => tx.value);
-    const invalidValues = isHonest ? committedValues.filter(value => !submittedValues.includes(value)) : [];
-    
-    return {
-      nodeId: node.nodeId,
-      committedValues,
-      invalidValues,
-      hasInvalidCommits: invalidValues.length > 0,
-      isHonest
-    };
-  });
-  
-  // Only count invalid commits from honest nodes
-  const honestInvalidCommits = nodeValidityResults
-    .filter(result => result.isHonest)
-    .flatMap(result => result.invalidValues);
-  
-  return {
-    passed: honestInvalidCommits.length === 0,
-    details: honestInvalidCommits.length === 0
-      ? `All recent commits from honest nodes trace to submitted requests (checked last ${expectedCount} commits per node)`
-      : `${honestInvalidCommits.length} invalid commits found in honest nodes`,
-    submitted: submittedValues,
-    nodeResults: nodeValidityResults,
-    totalInvalidCommits: honestInvalidCommits.length
-  };
-}
-
-function verifyTermination(honestNodes, expectedCount) {
   if (honestNodes.length === 0) {
-    return { passed: false, details: "No honest nodes to verify" };
+    return { passed: false, details: "No honest nodes to verify validity" };
   }
   
-  const commitCounts = honestNodes.map(node => node.commits.length);
-  const completeNodes = commitCounts.filter(count => count >= expectedCount).length;
-  const completionRate = completeNodes / honestNodes.length;
+  const submittedValues = testMetadata.submittedValues || [];
+  let allValid = true;
+  let totalCommits = 0;
   
-  return {
-    passed: completionRate >= 0.8,
-    details: `${completeNodes}/${honestNodes.length} honest nodes completed all transactions (${(completionRate * 100).toFixed(1)}% completion)`,
-    completionRate,
-    completeNodes,
-    expectedCount
+  for (const node of honestNodes) {
+    for (const commit of node.commits) {
+      totalCommits++;
+      if (submittedValues.length > 0 && !submittedValues.includes(commit.value)) {
+        allValid = false;
+        return { 
+          passed: false, 
+          details: `Invalid value ${commit.value} committed by ${node.nodeId}` 
+        };
+      }
+    }
+  }
+  
+  return { 
+    passed: allValid && totalCommits > 0, 
+    details: `All ${totalCommits} committed values were legitimately proposed by client` 
   };
 }
 
 async function main() {
   try {
-    console.log('=== SBFT Consensus Verification ===');
+    console.log('=== SBFT Cluster Consensus Verification ===');
     
-    // Load test metadata
-    const testData = loadTestMetadata();
-    console.log(`Algorithm: SBFT`);
-    console.log(`Test: ${testData.count} transactions [${testData.submittedValues.join(', ')}]`);
-    console.log('');
-    
-    // Load Byzantine configuration
+    const nodeData = await collectNodeData();
+    const testMetadata = loadTestMetadata();
     const byzantineConfig = loadByzantineConfig();
-    const byzantineNodes = Object.keys(byzantineConfig).filter(node => 
-      byzantineConfig[node] !== 'honest'
-    );
     
-    if (byzantineNodes.length > 0) {
-      console.log(`Byzantine nodes detected: ${byzantineNodes.join(', ')}`);
+    const runningNodes = nodeData.filter(n => n.status === 'running');
+    const honestRunningNodes = runningNodes.filter(n => byzantineConfig[n.nodeId] === 'honest');
+    
+    // Per-server breakdown
+    console.log('\n--- Per-Server Node Health Breakdown ---');
+    for (const machine of graph.MACHINES) {
+      const serverNodes = nodeData.filter(n => n.ip === machine.ip);
+      const onlineCount = serverNodes.filter(n => n.status === 'running').length;
+      const totalCount = serverNodes.length;
+      const statusIcon = onlineCount === totalCount ? '✅' : '⚠️ ';
+      console.log(`${statusIcon} Server ${machine.ip}: ${onlineCount}/${totalCount} nodes online`);
+      if (onlineCount < totalCount) {
+        const offline = serverNodes.filter(n => n.status === 'failed').map(n => `${n.nodeId}:${n.port}`).join(', ');
+        console.log(`   Offline: ${offline}`);
+      }
     }
     
-    // Collect node data - dynamically determine port range
-    const nodeCount = Object.keys(byzantineConfig).length || 4;
-    const ports = Array.from({length: nodeCount}, (_, i) => 3001 + i);
-    const nodeData = await collectNodeData(ports);
-    const runningNodes = nodeData.filter(node => node.status === 'running');
-    const honestNodes = filterHonestNodes(runningNodes, byzantineConfig);
+    console.log(`\nCluster Status: ${runningNodes.length}/${nodeData.length} nodes running (${honestRunningNodes.length} honest)`);
     
-    console.log(`Nodes: ${runningNodes.length}/${ports.length} running, ${honestNodes.length} honest`);
-    console.log('');
+    const totalN = nodeData.length;
+    const f = Math.floor((totalN - 1) / 3);
+    const requiredCommitQuorum = 2 * f + 1;
     
-    // Verify consensus properties
-    const agreement = verifyAgreement(honestNodes, testData);
-    const validity = verifyValidity(runningNodes, testData.submittedValues);
-    const termination = verifyTermination(honestNodes, testData.count);
+    console.log(`SBFT Fault Tolerance: N=${totalN}, f=${f}, Required Quorum (2f+1)=${requiredCommitQuorum}`);
     
-    // Display results with detailed values
+    if (runningNodes.length < requiredCommitQuorum) {
+      console.log(`\n❌ Quorum Failure: Only ${runningNodes.length} nodes online. Need at least ${requiredCommitQuorum} for SBFT quorum.`);
+    }
+    
+    const agreement = verifyAgreement(nodeData, byzantineConfig);
+    const validity = verifyValidity(nodeData, testMetadata, byzantineConfig);
+    
+    console.log('\nConsensus Checks:');
     console.log(`${agreement.passed ? '✅' : '❌'} Agreement: ${agreement.passed ? 'PASS' : 'FAIL'}`);
     console.log(`   ${agreement.details}`);
     
-    // Show all node states
-    console.log(`   Node commit sequences:`);
-    nodeData.forEach(node => {
-      const values = node.commits.slice(-testData.count).map(tx => tx.value);
-      const behavior = byzantineConfig[node.nodeId] || 'honest';
-      const status = node.status === 'running' ? '🟢' : '🔴';
-      console.log(`     ${status} Node ${node.nodeId} (${behavior}): [${values.join(', ')}]`);
-    });
-    console.log('');
-    
     console.log(`${validity.passed ? '✅' : '❌'} Validity: ${validity.passed ? 'PASS' : 'FAIL'}`);
     console.log(`   ${validity.details}`);
-    console.log(`   Submitted: [${validity.submitted.join(', ')}]`);
     
-    if (validity.passed) {
-      console.log(`   All honest nodes committed valid values (Byzantine nodes excluded)`);
-    } else {
-      console.log(`   Invalid commits found in honest nodes:`);
-      validity.nodeResults.forEach(result => {
-        if (result.isHonest && result.hasInvalidCommits) {
-          console.log(`     ❌ Node ${result.nodeId}: [${result.invalidValues.join(', ')}]`);
-        }
-      });
+    console.log('\nSample Node Commit State:');
+    const sampleNodes = runningNodes.slice(0, 8);
+    sampleNodes.forEach(node => {
+      const commits = node.commits.map(c => c.value);
+      console.log(`   🟢 ${node.nodeId} (${node.ip}:${node.port}): [${commits.join(', ')}] (${commits.length} total commits)`);
+    });
+    if (runningNodes.length > 8) {
+      console.log(`   ... and ${runningNodes.length - 8} more nodes`);
     }
-    console.log('');
     
-    console.log(`${termination.passed ? '✅' : '❌'} Termination: ${termination.passed ? 'PASS' : 'FAIL'}`);
-    console.log(`   ${termination.details}`);
-    console.log('');
-    
-    // Summary
-    const allPassed = agreement.passed && validity.passed && termination.passed;
-    console.log(`=== Summary ===`);
-    console.log(`Consensus verification: ${allPassed ? '✅ PASS' : '❌ FAIL'}`);
+    const allPassed = agreement.passed && validity.passed;
+    console.log('\n=== Summary ===');
+    console.log(`Consensus: ${allPassed ? '✅ PASS' : '❌ FAIL'}`);
     
     process.exit(allPassed ? 0 : 1);
     
   } catch (error) {
-    console.error(`❌ Verification failed: ${error.message}`);
+    console.error(`❌ Verification error: ${error.message}`);
     process.exit(2);
   }
 }

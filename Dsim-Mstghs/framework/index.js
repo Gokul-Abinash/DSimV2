@@ -5,10 +5,11 @@ const graph = require('./helper_modules/graph.js');
 const protocolLoader = require('./protocol-loader.js');
 
 const app = express();
+app.use(bodyParser.json());
 
 const PORT = Number(process.argv[2]);
 if (!PORT) {
-  console.error("Provide a PORT: node index.js 3001");
+  console.error("Provide a PORT: node index.js 3001 [NodeID]");
   process.exit(1);
 }
 
@@ -17,10 +18,17 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname));
 
-const myNodeID = graph.findCurrentNodeByPORT(PORT);
+const explicitNodeID = process.argv[3];
+const myNodeID = explicitNodeID || graph.findCurrentNode(PORT) || graph.findCurrentNodeByPORT(PORT);
+
+if (!myNodeID) {
+  console.error(`Could not determine Node ID for PORT=${PORT} on local IP=${graph.getLocalIP()}`);
+  process.exit(1);
+}
+
 const protocol = protocolLoader.loadProtocol(myNodeID);
 protocol.setNodeContext(myNodeID);
-console.log(`GHS Node started at ID=${myNodeID}, PORT=${PORT}`);
+console.log(`GHS Node started at ID=${myNodeID}, IP=${graph.getLocalIP()}, PORT=${PORT}`);
 
 // View status
 app.get('/', (req, res) => {

@@ -9,7 +9,7 @@ app.use(bodyParser.json());
 
 const PORT = Number(process.argv[2]);
 if (!PORT) {
-  console.error("Provide a PORT: node index.js 3001");
+  console.error("Provide a PORT: node index.js 3001 [NodeID]");
   process.exit(1);
 }
 app.use(cors());
@@ -17,19 +17,24 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(__dirname));   // to handle the html pages
 
+// Determine Node ID: Explicit argument -> IP+Port match -> Port match fallback
+const explicitNodeID = process.argv[3];
+const myNodeID = explicitNodeID || graph.findCurrentNode(PORT) || graph.findCurrentNodeByPORT(PORT);
 
-const myNodeID = graph.findCurrentNodeByPORT(PORT);
+if (!myNodeID) {
+  console.error(`Could not determine Node ID for PORT=${PORT} on local IP=${graph.getLocalIP()}`);
+  process.exit(1);
+}
+
 const protocol = protocolLoader.loadProtocol(myNodeID);
 protocol.setNodeContext(myNodeID);
-console.log(`PBFT Node started at ID=${myNodeID}, PORT=${PORT}`);
-
-// Setting the protocol context for signatures (this loads keys inside protocol.js)
-protocol.setNodeContext(myNodeID);
+console.log(`PBFT Node started at ID=${myNodeID}, IP=${graph.getLocalIP()}, PORT=${PORT}`);
 
 // View status
 app.get('/', (req, res) => {
   res.send(`Node ${myNodeID}, Port ${PORT} - PBFT ready`);
 });
+
 app.get('/api/status', (req, res) => {
   // Load Byzantine configuration to determine node behavior
   let behavior = 'honest';
@@ -58,7 +63,6 @@ app.post('/api/pbft', (req, res) => {
   res.json({ ok: true });
 });
 
-
 // Add log viewing route:
 app.get('/api/pbft-log', (req, res) => {
   res.json(protocol.getPBFTNodeLog());
@@ -67,7 +71,7 @@ app.get('/api/pbft-log', (req, res) => {
 // Adding a PBFT Commit Log
 app.get('/api/pbft-commit-log', (req, res) => {
   res.json(protocol.getPBFTCommitLog());
-})
+});
 
 // To simulate: client triggers consensus by POSTing to this node's /api/client
 app.post('/api/client', (req, res) => {
@@ -76,8 +80,7 @@ app.post('/api/client', (req, res) => {
   res.json({ ok: true, msg: "Request handled" });
 });
 
-// Start server
+// Start server listening on all network interfaces
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
 });
-

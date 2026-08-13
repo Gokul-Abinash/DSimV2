@@ -1,76 +1,7 @@
 [Node1] Loading honest protocol
 Node Node1 behavior: honest
-[8:39:17 PM.280] Node1 - INIT - Node initialized as Node1, f=1 
+[8:08:19 PM.709] Node1 - INIT - Node initialized as Node1, f=2 
 PBFT Node started at ID=Node1, PORT=3001
 Node Node1 behavior: honest
-[8:39:17 PM.359] Node1 - INIT - Node initialized as Node1, f=1 
+[8:08:19 PM.810] Node1 - INIT - Node initialized as Node1, f=2 
 Server listening on port 3001
-[8:39:23 PM.393] Node1 - CLIENT - Request queued for processing {"operation":"TX","id":1,"value":100}
-{ operation: 'TX', id: 1, value: 100 }
-[LATENCY] Node1 -> B: 0ms delay
-[LATENCY] Node1 -> C: 0ms delay
-[LATENCY] Node1 -> D: 0ms delay
-[8:39:23 PM.500] Node1 - PRE-PREPARE - Accepted PRE-PREPARE for req#1 from Node1 
-[LATENCY] Node1 -> B: 0ms delay
-[LATENCY] Node1 -> C: 0ms delay
-[LATENCY] Node1 -> D: 0ms delay
-[8:39:23 PM.533] Node1 - PREPARE - Broadcasted PREPARE for req #1 
-[8:39:23 PM.627] Node1 - PREPARE - Accepted PREPARE for req #1 from Node4 {"totalPrepares":1}
-[8:39:23 PM.630] Node1 - PREPARE - Accepted PREPARE for req #1 from Node3 {"totalPrepares":2}
-[8:39:23 PM.630] Node1 - PREPARE - Request #1 is now prepared. 
-[LATENCY] Node1 -> B: 0ms delay
-[LATENCY] Node1 -> C: 0ms delay
-[LATENCY] Node1 -> D: 0ms delay
-[8:39:23 PM.668] Node1 - COMMIT - Broadcasted COMMIT for req #1 
-[8:39:23 PM.671] Node1 - PREPARE - Accepted PREPARE for req #1 from Node2 {"totalPrepares":3}
-[8:39:23 PM.679] Node1 - COMMIT - Accepted COMMIT for req #1 from Node3 {"totalCommits":1}
-[8:39:23 PM.683] Node1 - COMMIT - Accepted COMMIT for req #1 from Node2 {"totalCommits":2}
-[8:39:23 PM.685] Node1 - COMMIT - Accepted COMMIT for req #1 from Node4 {"totalCommits":3}
-[8:39:23 PM.685] Node1 - COMMIT - Request #1 is now committed_local. 
-[8:39:23 PM.690] Node1 - EXECUTION - Executed request #1 in order ✅ 
-[8:39:26 PM.442] Node1 - CLIENT - Request queued for processing {"operation":"TX","id":2,"value":200}
-{ operation: 'TX', id: 2, value: 200 }
-[LATENCY] Node1 -> B: 0ms delay
-[LATENCY] Node1 -> C: 0ms delay
-[LATENCY] Node1 -> D: 0ms delay
-[8:39:26 PM.516] Node1 - PRE-PREPARE - Accepted PRE-PREPARE for req#2 from Node1 
-[LATENCY] Node1 -> B: 0ms delay
-[LATENCY] Node1 -> C: 0ms delay
-[LATENCY] Node1 -> D: 0ms delay
-[8:39:26 PM.547] Node1 - PREPARE - Broadcasted PREPARE for req #2 
-[8:39:26 PM.591] Node1 - PREPARE - Accepted PREPARE for req #2 from Node4 {"totalPrepares":1}
-[8:39:26 PM.595] Node1 - PREPARE - Accepted PREPARE for req #2 from Node3 {"totalPrepares":2}
-[8:39:26 PM.595] Node1 - PREPARE - Request #2 is now prepared. 
-[LATENCY] Node1 -> B: 0ms delay
-[LATENCY] Node1 -> C: 0ms delay
-[LATENCY] Node1 -> D: 0ms delay
-[8:39:26 PM.629] Node1 - COMMIT - Broadcasted COMMIT for req #2 
-[8:39:26 PM.632] Node1 - PREPARE - Accepted PREPARE for req #2 from Node2 {"totalPrepares":3}
-[8:39:26 PM.634] Node1 - COMMIT - Accepted COMMIT for req #2 from Node4 {"totalCommits":1}
-[8:39:26 PM.635] Node1 - COMMIT - Accepted COMMIT for req #2 from Node2 {"totalCommits":2}
-[8:39:26 PM.637] Node1 - COMMIT - Accepted COMMIT for req #2 from Node3 {"totalCommits":3}
-[8:39:26 PM.637] Node1 - COMMIT - Request #2 is now committed_local. 
-[8:39:26 PM.653] Node1 - EXECUTION - Executed request #2 in order ✅ 
-[8:39:29 PM.476] Node1 - CLIENT - Request queued for processing {"operation":"TX","id":3,"value":300}
-{ operation: 'TX', id: 3, value: 300 }
-[LATENCY] Node1 -> B: 0ms delay
-[LATENCY] Node1 -> C: 0ms delay
-[LATENCY] Node1 -> D: 0ms delay
-[8:39:29 PM.548] Node1 - PRE-PREPARE - Accepted PRE-PREPARE for req#3 from Node1 
-[LATENCY] Node1 -> B: 0ms delay
-[LATENCY] Node1 -> C: 0ms delay
-[LATENCY] Node1 -> D: 0ms delay
-[8:39:29 PM.579] Node1 - PREPARE - Broadcasted PREPARE for req #3 
-[8:39:29 PM.615] Node1 - PREPARE - Accepted PREPARE for req #3 from Node3 {"totalPrepares":1}
-[8:39:29 PM.616] Node1 - PREPARE - Accepted PREPARE for req #3 from Node4 {"totalPrepares":2}
-[8:39:29 PM.616] Node1 - PREPARE - Request #3 is now prepared. 
-[LATENCY] Node1 -> B: 0ms delay
-[LATENCY] Node1 -> C: 0ms delay
-[LATENCY] Node1 -> D: 0ms delay
-[8:39:29 PM.651] Node1 - COMMIT - Broadcasted COMMIT for req #3 
-[8:39:29 PM.654] Node1 - PREPARE - Accepted PREPARE for req #3 from Node2 {"totalPrepares":3}
-[8:39:29 PM.656] Node1 - COMMIT - Accepted COMMIT for req #3 from Node4 {"totalCommits":1}
-[8:39:29 PM.658] Node1 - COMMIT - Accepted COMMIT for req #3 from Node2 {"totalCommits":2}
-[8:39:29 PM.659] Node1 - COMMIT - Accepted COMMIT for req #3 from Node3 {"totalCommits":3}
-[8:39:29 PM.659] Node1 - COMMIT - Request #3 is now committed_local. 
-[8:39:29 PM.672] Node1 - EXECUTION - Executed request #3 in order ✅ 
