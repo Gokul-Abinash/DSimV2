@@ -1,5 +1,5 @@
 const config = {};
-for (let i = 1; i <= 64; i++) {
+for (let i = 1; i <= 128; i++) {
   config[`Node${i}`] = "honest";
 }
 

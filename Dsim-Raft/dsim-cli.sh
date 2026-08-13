@@ -39,7 +39,7 @@ start_nodes() {
     
     local running=0
     for port in "${PORTS[@]}"; do
-        if lsof -i :$port >/dev/null 2>&1; then
+        if curl -s --max-time 1 "http://127.0.0.1:$port/api/status" >/dev/null 2>&1 || lsof -i :$port >/dev/null 2>&1; then
             running=$((running + 1))
         else
             echo "❌ Node on port $port failed to start"
@@ -47,7 +47,7 @@ start_nodes() {
     done
     
     echo "=========================================="
-    echo "Summary: $running / 16 nodes running on this server"
+    echo "Summary: $running / ${#PORTS[@]} nodes running on this server"
     echo "=========================================="
 }
 
@@ -71,7 +71,10 @@ stop_nodes() {
         if [ -n "$pid" ]; then
             kill -9 $pid 2>/dev/null
         fi
+        fuser -k -9 "${port}/tcp" 2>/dev/null || true
     done
+    
+    pkill -9 -f "node index.js" 2>/dev/null || true
     
     sleep 1
     echo "All local Raft nodes stopped."
@@ -81,8 +84,8 @@ check_status() {
     echo "=== Local Raft Nodes Status ==="
     local count=0
     for port in "${PORTS[@]}"; do
-        if lsof -i :$port >/dev/null 2>&1; then
-            local info=$(curl -s --max-time 2 http://localhost:$port/api/status 2>/dev/null)
+        local info=$(curl -s --max-time 2 "http://127.0.0.1:$port/api/status" 2>/dev/null)
+        if [ -n "$info" ] || lsof -i :$port >/dev/null 2>&1; then
             local node_id=$(echo "$info" | grep -o '"nodeID":"[^"]*"' | cut -d'"' -f4)
             if [ -n "$node_id" ]; then
                 echo "  🟢 Port $port: RUNNING (ID: $node_id)"
