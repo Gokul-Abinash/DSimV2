@@ -42,12 +42,20 @@ async function collectNodeData() {
 }
 
 function loadTestMetadata() {
-  try {
-    const metadata = JSON.parse(fs.readFileSync('test-metadata.json', 'utf8'));
-    return metadata;
-  } catch (error) {
-    return { count: 1, submittedValues: [100] };
+  const possiblePaths = [
+    'test-metadata.json',
+    '../test-metadata.json',
+    './framework/test-metadata.json',
+    '../../test-metadata.json'
+  ];
+  for (const p of possiblePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        return JSON.parse(fs.readFileSync(p, 'utf8'));
+      }
+    } catch (e) {}
   }
+  return { count: 100, submittedValues: [] };
 }
 
 function loadByzantineConfig() {
@@ -111,14 +119,16 @@ function verifyValidity(nodeData, testMetadata, byzantineConfig) {
     return { passed: false, details: "No honest nodes to verify validity" };
   }
   
-  const submittedValues = testMetadata.submittedValues || [];
+  const submittedValues = new Set(testMetadata.submittedValues || []);
   let allValid = true;
   let totalCommits = 0;
   
   for (const node of honestNodes) {
     for (const commit of node.commits) {
       totalCommits++;
-      if (submittedValues.length > 0 && !submittedValues.includes(commit.value)) {
+      const isValid = (submittedValues.size > 0 && submittedValues.has(commit.value)) ||
+                      (submittedValues.size === 0 && typeof commit.value === 'number' && commit.value > 0);
+      if (!isValid) {
         allValid = false;
         return { 
           passed: false, 

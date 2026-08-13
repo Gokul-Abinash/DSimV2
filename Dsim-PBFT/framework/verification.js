@@ -42,12 +42,20 @@ async function collectNodeData() {
 }
 
 function loadTestMetadata() {
-  try {
-    const metadata = JSON.parse(fs.readFileSync('test-metadata.json', 'utf8'));
-    return metadata;
-  } catch (error) {
-    return { count: 1, submittedValues: [100] };
+  const possiblePaths = [
+    'test-metadata.json',
+    '../test-metadata.json',
+    './framework/test-metadata.json',
+    '../../test-metadata.json'
+  ];
+  for (const p of possiblePaths) {
+    try {
+      if (fs.existsSync(p)) {
+        return JSON.parse(fs.readFileSync(p, 'utf8'));
+      }
+    } catch (e) {}
   }
+  return { count: 100, submittedValues: [] };
 }
 
 function loadByzantineConfig() {

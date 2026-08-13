@@ -244,6 +244,31 @@ class BenchmarkRunner {
     let sentCount = 0;
     let ackCount = 0;
 
+    // Save test metadata for verification script
+    try {
+      const allSubmittedValues = [];
+      for (let i = 1; i <= this.totalRequests; i++) {
+        allSubmittedValues.push(i * 100);
+      }
+      const testMetadata = {
+        submittedValues: allSubmittedValues,
+        timestamp: Date.now(),
+        count: this.totalRequests,
+        algorithm: this.algorithmName.toUpperCase()
+      };
+      const metadataPaths = [
+        path.join(__dirname, this.config.dir, 'framework', 'test-metadata.json'),
+        path.join(__dirname, this.config.dir, 'test-metadata.json'),
+        path.join(process.cwd(), 'test-metadata.json')
+      ];
+      for (const p of metadataPaths) {
+        try {
+          fs.mkdirSync(path.dirname(p), { recursive: true });
+          fs.writeFileSync(p, JSON.stringify(testMetadata, null, 2));
+        } catch (e) {}
+      }
+    } catch (e) {}
+
     // Send single transaction
     const sendTx = async (id) => {
       const value = id * 100;
