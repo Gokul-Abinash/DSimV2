@@ -128,14 +128,14 @@ function handleClientRequest(request, myNodeID) {
   }
 }
 
-const MAX_IN_FLIGHT = 5; // Window of maximum concurrent in-flight sequences
+const MAX_IN_FLIGHT = 10; // Window of maximum concurrent in-flight sequences
 
 // Process requests with batch optimization and flow control
 function processNextRequest() {
   if (PBFTState.pendingRequests.length === 0 || PBFTState.inViewChange) return;
   
   // Pipeline flow control: ensure network is not flooded by capping concurrent uncommitted transactions
-  const inFlight = PBFTState.sequence - PBFTState.nextExecuteSeq + 1;
+  const inFlight = Math.max(0, PBFTState.sequence - PBFTState.nextExecuteSeq + 1);
   if (inFlight >= MAX_IN_FLIGHT) return;
   
   const availableSlots = Math.max(1, MAX_IN_FLIGHT - inFlight);
@@ -149,9 +149,9 @@ function processNextRequest() {
     const seq = PBFTState.sequence;
     const digest = digestMessage(request);
 
-    PBFTState.log[seq] = {
-      request,
-      digest,
+    PBFTState.log[seq] = PBFTState.log[seq] || {
+      request: null,
+      digest: null,
       preprepare: null,
       prepares: new Set(),
       commits: new Set(),
@@ -159,9 +159,12 @@ function processNextRequest() {
       prepared: false,
       committed: false,
       committed_local: false,
-      view: PBFTState.view,
-      submitTime: request.submitTime
+      view: PBFTState.view
     };
+
+    PBFTState.log[seq].request = request;
+    PBFTState.log[seq].digest = digest;
+    PBFTState.log[seq].submitTime = request.submitTime;
 
     const prePrepareMsg = {
       view: PBFTState.view,
@@ -292,7 +295,6 @@ function handlePBFTMessage(msg, myNodeID) {
     
     // Check if already have pre-prepare for this sequence
     if (logEntry.preprepare) {
-      logPBFTEvent({node: myNodeID, phase: "PRE-PREPARE", action: `Rejected: Already have PRE-PREPARE for seq ${seq}`});
       return;
     }
     
@@ -321,7 +323,7 @@ function handlePBFTMessage(msg, myNodeID) {
     broadcastPBFTMessage('PREPARE', myNodeID, seq, prepareMsg);
     logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Broadcasted PREPARE for req #${seq}`});
 
-    // Check if prepared already reached
+    // Check if prepared state already reached from buffered prepares
     if (isPrepared(logEntry) && !logEntry.prepared) {
       logEntry.prepared = true;
       logEntry.commits.add(myNodeID); // Record self commit
@@ -347,19 +349,19 @@ function handlePBFTMessage(msg, myNodeID) {
   if (type === 'PREPARE') {
     // Check for the view number
     if (data.view !== PBFTState.view) {
-      logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Rejected: View number mismatch (msg: ${data.view}, local: ${PBFTState.view})`});
       return;
     }
 
-    // Check if the digest matches pre-prepare
-    if (!logEntry.preprepare || logEntry.digest !== data.digest) {
-      logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Rejected: No matching PRE-PREPARE or digest mismatch`});
+    // Check digest if pre-prepare is already known
+    if (logEntry.digest && logEntry.digest !== data.digest) {
       return;
     }
 
-    // Accept PREPARE message 
+    // Buffer PREPARE message
     logEntry.prepares.add(sender);
-    logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Accepted PREPARE for req #${seq} from ${sender}`, details: {totalPrepares: logEntry.prepares.size}});
+    if (!logEntry.digest && data.digest) {
+      logEntry.digest = data.digest;
+    }
 
     // If prepared state reached, mark and broadcast COMMIT
     if (isPrepared(logEntry) && !logEntry.prepared) {
@@ -370,7 +372,7 @@ function handlePBFTMessage(msg, myNodeID) {
       const commitMsg = {
         view: PBFTState.view,
         seq,
-        digest: data.digest
+        digest: logEntry.digest
       };
       
       broadcastPBFTMessage('COMMIT', myNodeID, seq, commitMsg);
@@ -387,25 +389,19 @@ function handlePBFTMessage(msg, myNodeID) {
   if (type === 'COMMIT') {
     // Check if the view number is correct
     if (data.view !== PBFTState.view) {
-      logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Rejected: View number mismatch (msg: ${data.view}, local: ${PBFTState.view})`});
       return;
     }
     
-    // Check if the digest matches the pre-prepare
-    if (!logEntry.preprepare || logEntry.digest !== data.digest) {
-      logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Rejected: No matching PRE-PREPARE or digest mismatch`});
-      return;
-    }
-    
-    // Only accept commit if already prepared
-    if (!logEntry.prepared) {
-      logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Rejected: Not prepared yet!`});
+    // Check digest if already known
+    if (logEntry.digest && logEntry.digest !== data.digest) {
       return;
     }
 
-    // Accept the commit message
+    // Buffer the commit message
     logEntry.commits.add(sender);
-    logPBFTEvent({ node: myNodeID, phase: "COMMIT", action: `Accepted COMMIT for req #${seq} from ${sender}`, details: { totalCommits: logEntry.commits.size } });
+    if (!logEntry.digest && data.digest) {
+      logEntry.digest = data.digest;
+    }
 
     // If committed_local state reached, mark it
     if (isCommittedLocal(logEntry) && !logEntry.committed_local) {
