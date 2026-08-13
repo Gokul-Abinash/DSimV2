@@ -25,6 +25,13 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
+const defaultHttpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 200,
+  maxFreeSockets: 50,
+  timeout: 30000
+});
+
 // Lightweight zero-dependency HTTP client using Node.js built-ins
 function httpRequest(targetUrl, options = {}) {
   return new Promise((resolve, reject) => {
@@ -38,7 +45,8 @@ function httpRequest(targetUrl, options = {}) {
       path: parsed.path,
       method: options.method || 'GET',
       headers: options.headers || {},
-      timeout: options.timeout || 10000
+      timeout: options.timeout || 15000,
+      agent: isHttps ? undefined : defaultHttpAgent
     };
 
     let bodyData = null;

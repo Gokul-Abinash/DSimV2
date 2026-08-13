@@ -93,6 +93,8 @@ app.post('/api/client', (req, res) => {
 });
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server listening on port ${PORT}`);
 });
+server.keepAliveTimeout = 65000;
+server.headersTimeout = 66000;

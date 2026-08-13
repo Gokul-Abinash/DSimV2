@@ -1,4 +1,18 @@
 const axios = require('axios');
+const http = require('http');
+
+// Persistent HTTP Agent with Keep-Alive to eliminate socket exhaustion across 128 nodes
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 500,
+  maxFreeSockets: 100,
+  timeout: 15000
+});
+
+const apiClient = axios.create({
+  httpAgent,
+  timeout: 8000
+});
 
 // Safe loading of latency-config if present
 let latencyConfig = null;
@@ -43,9 +57,8 @@ async function sendPostRequestsToIPs(postData, ipsArray, portArray, endpointArra
           await new Promise(resolve => setTimeout(resolve, delayMs));
         }
         
-        const response = await axios.post(url, postData, {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 8000
+        const response = await apiClient.post(url, postData, {
+          headers: { 'Content-Type': 'application/json' }
         });
         
         responses.push({ ip, port, data: response.data, error: null });

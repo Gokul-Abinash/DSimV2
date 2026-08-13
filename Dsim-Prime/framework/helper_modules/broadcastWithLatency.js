@@ -1,5 +1,23 @@
 const axios = require('axios');
-const latencyConfig = require('../../../latency-config.js');
+const http = require('http');
+
+// Persistent HTTP Agent with Keep-Alive to eliminate socket exhaustion across 128 nodes
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 500,
+  maxFreeSockets: 100,
+  timeout: 15000
+});
+
+const apiClient = axios.create({
+  httpAgent,
+  timeout: 10000
+});
+
+let latencyConfig = null;
+try {
+  latencyConfig = require('../../../latency-config.js');
+} catch (e) {}
 
 // Message queue for delayed delivery
 const messageQueue = [];
@@ -26,30 +44,23 @@ async function sendPostRequestsToIPs(postData, ipsArray, portArray, endpointArra
         // No Byzantine config
       }
       
-      // Generate latency
-      const latency = latencyConfig.generateLatency(fromNode, toNode, byzantineBehavior);
-      
-      // Handle message dropping (Byzantine intermittent behavior)
-      if (latency === -1) {
-        console.log(`[LATENCY] Message from ${fromNode} to ${toNode} DROPPED (Byzantine behavior)`);
-        responses.push({ ip, data: null, error: 'Message dropped by Byzantine behavior' });
-        return;
+      let finalLatency = 0;
+      if (latencyConfig && typeof latencyConfig.generateLatency === 'function') {
+        const latency = latencyConfig.generateLatency(fromNode, toNode, byzantineBehavior);
+        if (latency === -1) {
+          responses.push({ ip, data: null, error: 'Message dropped by Byzantine behavior' });
+          return;
+        }
+        finalLatency = latencyConfig.addJitter ? latencyConfig.addJitter(latency, 15) : latency;
       }
-      
-      // Add jitter for more realistic simulation
-      const finalLatency = latencyConfig.addJitter(latency, 15);
-      
-      console.log(`[LATENCY] ${fromNode} -> ${toNode}: ${finalLatency}ms delay`);
       
       try {
         if (finalLatency > 0) {
-          // Delayed message delivery
           await new Promise(resolve => setTimeout(resolve, finalLatency));
         }
         
-        const response = await axios.post(url, postData, {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000 // 10 second timeout
+        const response = await apiClient.post(url, postData, {
+          headers: { 'Content-Type': 'application/json' }
         });
         
         responses.push({ ip, data: response.data, error: null, latency: finalLatency });

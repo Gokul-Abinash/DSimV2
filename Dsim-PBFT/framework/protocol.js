@@ -125,17 +125,23 @@ function handleClientRequest(request, myNodeID) {
   logPBFTEvent({ node: myNodeID, phase: "CLIENT", action: `Request queued for processing`, details: request });
 }
 
-// Process requests with batch optimization
+const MAX_IN_FLIGHT = 5; // Window of maximum concurrent in-flight sequences
+
+// Process requests with batch optimization and flow control
 function processNextRequest() {
-  if (PBFTState.pendingRequests.length === 0 || PBFTState.inViewChange || PBFTState.processingTransaction) return;
+  if (PBFTState.pendingRequests.length === 0 || PBFTState.inViewChange) return;
   
-  PBFTState.processingTransaction = true;
+  // Pipeline flow control: ensure network is not flooded by capping concurrent uncommitted transactions
+  const inFlight = PBFTState.sequence - PBFTState.nextExecuteSeq + 1;
+  if (inFlight >= MAX_IN_FLIGHT) return;
   
-  // Process up to 3 requests in quick succession for better TPS
-  const batchSize = Math.min(3, PBFTState.pendingRequests.length);
+  const availableSlots = Math.max(1, MAX_IN_FLIGHT - inFlight);
+  const batchSize = Math.min(availableSlots, PBFTState.pendingRequests.length);
   
   for (let i = 0; i < batchSize; i++) {
     const request = PBFTState.pendingRequests.shift();
+    if (!request) break;
+    
     PBFTState.sequence += 1;
     const seq = PBFTState.sequence;
     const digest = digestMessage(request);
@@ -181,8 +187,6 @@ function processNextRequest() {
       handlePBFTMessage(msgObj, myNodeID);
     });
   }
-  
-  PBFTState.processingTransaction = false;
 }
 
 // Execute transactions in sequential order
