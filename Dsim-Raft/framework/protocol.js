@@ -127,22 +127,37 @@ function becomeLeader() {
 function sendHeartbeats() {
   if (RaftState.state !== 'leader') return;
   
+  const targetIPs = [];
+  const targetPorts = [];
+  const targetEndpoints = [];
+  
   for (const nodeId of nodeIDs) {
     if (nodeId !== myNodeID) {
-      const prevLogIndex = RaftState.nextIndex[nodeId] - 1;
-      const prevLogTerm = prevLogIndex > 0 ? RaftState.log[prevLogIndex - 1].term : 0;
-      
-      const appendEntries = {
-        term: RaftState.currentTerm,
-        leaderId: myNodeID,
-        prevLogIndex,
-        prevLogTerm,
-        entries: [],
-        leaderCommit: RaftState.commitIndex
-      };
-      
-      sendRaftMessage('APPEND_ENTRIES', myNodeID, nodeId, appendEntries);
+      const targetNode = graph.nodeIPsArray.find(obj => Object.keys(obj)[0] === nodeId);
+      if (targetNode) {
+        const nodeInfo = Object.values(targetNode)[0];
+        targetIPs.push(nodeInfo.ip);
+        targetPorts.push(nodeInfo.port);
+        targetEndpoints.push('api/raft');
+      }
     }
+  }
+  
+  if (targetIPs.length > 0) {
+    const appendEntries = {
+      term: RaftState.currentTerm,
+      leaderId: myNodeID,
+      prevLogIndex: RaftState.log.length,
+      prevLogTerm: RaftState.log.length > 0 ? RaftState.log[RaftState.log.length - 1].term : 0,
+      entries: [],
+      leaderCommit: RaftState.commitIndex
+    };
+    
+    const msgObj = { type: 'APPEND_ENTRIES', sender: myNodeID, data: appendEntries };
+    const signature = signRaftMessage(msgObj);
+    const signedMsg = { ...msgObj, signature };
+    
+    broadcastNew.sendPostRequestsToIPs(signedMsg, targetIPs, targetPorts, targetEndpoints, myNodeID);
   }
 }
 
@@ -179,30 +194,45 @@ function processRequestQueue() {
 }
 
 function replicateAndCommit(logEntry) {
-  // Replicate to all followers
+  const targetIPs = [];
+  const targetPorts = [];
+  const targetEndpoints = [];
+  
   for (const nodeId of nodeIDs) {
     if (nodeId !== myNodeID) {
-      const prevLogIndex = logEntry.index - 1;
-      const prevLogTerm = prevLogIndex > 0 ? RaftState.log[prevLogIndex - 1].term : 0;
-      
-      const appendEntries = {
-        term: RaftState.currentTerm,
-        leaderId: myNodeID,
-        prevLogIndex,
-        prevLogTerm,
-        entries: [logEntry],
-        leaderCommit: RaftState.commitIndex
-      };
-      
-      sendRaftMessage('APPEND_ENTRIES', myNodeID, nodeId, appendEntries);
+      const targetNode = graph.nodeIPsArray.find(obj => Object.keys(obj)[0] === nodeId);
+      if (targetNode) {
+        const nodeInfo = Object.values(targetNode)[0];
+        targetIPs.push(nodeInfo.ip);
+        targetPorts.push(nodeInfo.port);
+        targetEndpoints.push('api/raft');
+      }
     }
   }
+  
+  const prevLogIndex = logEntry.index - 1;
+  const prevLogTerm = prevLogIndex > 0 ? RaftState.log[prevLogIndex - 1].term : 0;
+  
+  const appendEntries = {
+    term: RaftState.currentTerm,
+    leaderId: myNodeID,
+    prevLogIndex,
+    prevLogTerm,
+    entries: [logEntry],
+    leaderCommit: RaftState.commitIndex
+  };
+  
+  const msgObj = { type: 'APPEND_ENTRIES', sender: myNodeID, data: appendEntries };
+  const signature = signRaftMessage(msgObj);
+  const signedMsg = { ...msgObj, signature };
+  
+  broadcastNew.sendPostRequestsToIPs(signedMsg, targetIPs, targetPorts, targetEndpoints, myNodeID);
   
   // Wait for majority replication before committing
   let attempts = 0;
   const checkMajority = () => {
     attempts++;
-    if (attempts > 10 || RaftState.state !== 'leader') return;
+    if (attempts > 20 || RaftState.state !== 'leader') return;
     
     let replicationCount = 1; // Leader counts as 1
     for (const nodeId of nodeIDs) {
@@ -218,14 +248,14 @@ function replicateAndCommit(logEntry) {
         applyCommittedEntries();
       }
       // Process next request
-      setTimeout(() => processRequestQueue(), 100);
+      setTimeout(() => processRequestQueue(), 25);
     } else {
       // Wait and check again
-      setTimeout(checkMajority, 200);
+      setTimeout(checkMajority, 50);
     }
   };
   
-  setTimeout(checkMajority, 500);
+  setTimeout(checkMajority, 25);
 }
 
 function handleRaftMessage(msg, myNodeID) {

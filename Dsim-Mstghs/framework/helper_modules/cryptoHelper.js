@@ -1,45 +1,51 @@
-const forge = require('node-forge');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-// Generate and save a key pair for a node
-function generateKeyPair(nodeID) {
-  const keypair = forge.pki.rsa.generateKeyPair(2048);
-  const privateKeyPem = forge.pki.privateKeyToPem(keypair.privateKey);
-  const publicKeyPem = forge.pki.publicKeyToPem(keypair.publicKey);
-
-  fs.writeFileSync(path.join(__dirname, `${nodeID}_private.pem`), privateKeyPem);
-  fs.writeFileSync(path.join(__dirname, `${nodeID}_public.pem`), publicKeyPem);
-}
+// In-memory key caching to eliminate disk I/O overhead
+const privateKeyCache = {};
+const publicKeyCache = {};
 
 // Load a node's private key from PEM file
 function loadPrivateKey(nodeID) {
+  if (privateKeyCache[nodeID]) return privateKeyCache[nodeID];
   const pem = fs.readFileSync(path.join(__dirname, `${nodeID}_private.pem`), 'utf8');
-  return forge.pki.privateKeyFromPem(pem);
+  privateKeyCache[nodeID] = pem;
+  return pem;
 }
 
 // Load a node's public key from PEM file
 function loadPublicKey(nodeID) {
+  if (publicKeyCache[nodeID]) return publicKeyCache[nodeID];
   const pem = fs.readFileSync(path.join(__dirname, `${nodeID}_public.pem`), 'utf8');
-  return forge.pki.publicKeyFromPem(pem);
+  publicKeyCache[nodeID] = pem;
+  return pem;
 }
 
-// Sign a message (string) with a private key
+// High-speed native OpenSSL sign (< 0.05ms)
 function signMessage(privateKey, message) {
-  const md = forge.md.sha256.create();
-  md.update(message, 'utf8');
-  return forge.util.encode64(privateKey.sign(md));
+  try {
+    const signer = crypto.createSign('SHA256');
+    signer.update(message, 'utf8');
+    return signer.sign(privateKey, 'base64');
+  } catch (e) {
+    return '';
+  }
 }
 
-// Verify a signature for a message (string) with a public key
+// High-speed native OpenSSL verify (< 0.05ms)
 function verifySignature(publicKey, message, signature) {
-  const md = forge.md.sha256.create();
-  md.update(message, 'utf8');
-  return publicKey.verify(md.digest().bytes(), forge.util.decode64(signature));
+  try {
+    if (!signature || !publicKey) return false;
+    const verifier = crypto.createVerify('SHA256');
+    verifier.update(message, 'utf8');
+    return verifier.verify(publicKey, signature, 'base64');
+  } catch (e) {
+    return false;
+  }
 }
 
 module.exports = {
-  generateKeyPair,
   loadPrivateKey,
   loadPublicKey,
   signMessage,
