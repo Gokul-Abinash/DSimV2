@@ -172,11 +172,11 @@ function processSBFTMessage(msg, myNodeID) {
 
   if (type === 'PREPARE') {
     logEntry.request = data.request;
-    logEntry.commits.add(myNodeID); // Add self to commits
+    logEntry.commits.add(myNodeID);
     
     logSBFTEvent({node: myNodeID, phase: "PREPARE", action: `Accepted PREPARE for req#${seq} from ${sender}`});
 
-    // All nodes send COMMIT
+    // In SBFT, replicas send COMMIT vote directly to Primary (linear communication)
     let commitMsg = {
       seq,
       request: data.request
@@ -185,7 +185,6 @@ function processSBFTMessage(msg, myNodeID) {
     // Apply corrupt behavior
     if (myBehavior === 'corrupt' && Math.random() < 0.5) {
       commitMsg.request = {...commitMsg.request, value: Math.floor(Math.random() * 1000)};
-      logSBFTEvent({node: myNodeID, phase: "BYZANTINE", action: `Corrupted request value to ${commitMsg.request.value}`});
     }
     
     // Apply random behavior
@@ -194,20 +193,16 @@ function processSBFTMessage(msg, myNodeID) {
       const randomBehavior = behaviors[Math.floor(Math.random() * behaviors.length)];
       
       if (randomBehavior === 'ignore') {
-        logSBFTEvent({node: myNodeID, phase: "BYZANTINE", action: `Random behavior: ignoring COMMIT`});
         return;
       } else if (randomBehavior === 'corrupt') {
         commitMsg.request = {...commitMsg.request, value: Math.floor(Math.random() * 1000)};
-        logSBFTEvent({node: myNodeID, phase: "BYZANTINE", action: `Random behavior: corrupted value`});
       }
     }
     
-    broadcastSBFTMessage('COMMIT', myNodeID, seq, commitMsg);
-    logSBFTEvent({node: myNodeID, phase: "COMMIT", action: `Sent COMMIT for req #${seq}`});
+    sendSBFTMessage('COMMIT', myNodeID, nodeIDs[0], seq, commitMsg);
+    logSBFTEvent({node: myNodeID, phase: "COMMIT", action: `Sent COMMIT for req #${seq} to Primary`});
     
-    const requiredQuorum = 2 * SBFTState.f + 1;
-    if (logEntry.commits.size >= requiredQuorum) {
-      logEntry.committed = true;
+    if (logEntry.committed) {
       executeInOrder();
     }
   }
@@ -216,12 +211,30 @@ function processSBFTMessage(msg, myNodeID) {
     logEntry.commits.add(sender);
     logSBFTEvent({ node: myNodeID, phase: "COMMIT", action: `Accepted COMMIT for req #${seq} from ${sender}`, details: { totalCommits: logEntry.commits.size } });
 
-    // Need 2f+1 commits
+    // Primary collects 2f+1 commits and broadcasts DECIDE
     const requiredQuorum = 2 * SBFTState.f + 1;
-    if (logEntry.commits.size >= requiredQuorum && logEntry.request) {
+    if (logEntry.commits.size >= requiredQuorum && !logEntry.committed && logEntry.request) {
       logEntry.committed = true;
+      
+      if (myNodeID === nodeIDs[0]) {
+        const decideMsg = {
+          seq,
+          request: logEntry.request
+        };
+        broadcastSBFTMessage('DECIDE', myNodeID, seq, decideMsg);
+      }
+      
       executeInOrder();
     }
+  }
+
+  if (type === 'DECIDE') {
+    if (data.request) {
+      logEntry.request = data.request;
+    }
+    logEntry.committed = true;
+    logSBFTEvent({ node: myNodeID, phase: "DECIDE", action: `Received DECIDE for req #${seq}` });
+    executeInOrder();
   }
 }
 
@@ -274,6 +287,18 @@ function executeInOrder() {
       setImmediate(processNextRequest);
     }
   }
+}
+
+function sendSBFTMessage(type, myNodeID, targetNodeID, seq, data) {
+  const targetNode = graph.nodeIPsArray.find(obj => Object.keys(obj)[0] === targetNodeID);
+  if (!targetNode) return;
+  
+  const nodeInfo = Object.values(targetNode)[0];
+  const msgObj = { type, sender: myNodeID, seq, data };
+  const signature = signSBFTMessage(msgObj);
+  const signedMsg = {...msgObj, signature};
+
+  broadcastNew.sendPostRequestsToIPs(signedMsg, [nodeInfo.ip], [nodeInfo.port], ['api/sbft'], myNodeID);
 }
 
 function broadcastSBFTMessage(type, myNodeID, seq, data) {
