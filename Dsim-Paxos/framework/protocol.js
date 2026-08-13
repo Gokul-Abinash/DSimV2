@@ -2,7 +2,7 @@ const graph = require('./helper_modules/graph.js');
 const broadcastNew = require('./helper_modules/broadcastWithLatency.js');
 const cryptoHelper = require('./helper_modules/cryptoHelper.js');
 
-const ENABLE_LOGGING = true;
+const ENABLE_LOGGING = process.env.PAXOS_VERBOSE === 'true' || process.env.PAXOS_VERBOSE === '1';
 
 const paxosLog = [];
 const paxosCommitLog = [];
@@ -20,8 +20,12 @@ function logPaxosEvent(event) {
 }
 
 const PaxosState = {
+  sequence: 0,
+  nextExecuteSeq: 1,
   instances: {},
-  majority: 3
+  pendingRequests: [],
+  executedRequests: new Set(),
+  majority: 65
 };
 
 const nodeIDs = graph.nodeIPsArray.map(obj => Object.keys(obj)[0]);
@@ -32,7 +36,7 @@ function setNodeContext(nodeID) {
   try {
     const byzantineConfig = require('./byzantine-config.js');
     myBehavior = byzantineConfig[nodeID] || 'honest';
-    console.log(`Node ${nodeID} behavior: ${myBehavior}`);
+    if (ENABLE_LOGGING) console.log(`Node ${nodeID} behavior: ${myBehavior}`);
   } catch (error) {
     myBehavior = 'honest';
   }
@@ -44,6 +48,16 @@ function setNodeContext(nodeID) {
   PaxosState.majority = Math.floor(nodeIDs.length / 2) + 1;
   
   logPaxosEvent({node: myNodeID, phase: "INIT", action: `Node initialized, majority: ${PaxosState.majority}`});
+  
+  setInterval(() => {
+    if (myNodeID === nodeIDs[0] && PaxosState.pendingRequests.length > 0) {
+      processRequests();
+    }
+  }, 10);
+
+  setInterval(() => {
+    executeInOrder();
+  }, 10);
 }
 
 function signPaxosMessage(msgObj) {
@@ -62,40 +76,61 @@ function verifyPaxosSignature(sender, msgObj, signature) {
 }
 
 function handleClientRequest(request, myNodeID) {
-  // Crash nodes stop accepting client requests after a few transactions
   if (myBehavior === 'crash' && paxosCommitLog.length >= 4) {
     logPaxosEvent({node: myNodeID, phase: "CRASH", action: `Crash node rejecting client request after ${paxosCommitLog.length} commits`});
     return;
   }
   
-  const instanceId = Date.now() + Math.random();
+  PaxosState.pendingRequests.push({ ...request, submitTime: Date.now() });
+  logPaxosEvent({node: myNodeID, phase: "CLIENT", action: `Queued client request`, details: request});
   
-  logPaxosEvent({node: myNodeID, phase: "CLIENT", action: `Starting Paxos instance ${instanceId}`, details: request});
+  if (myNodeID === nodeIDs[0]) {
+    processRequests();
+  }
+}
+
+const MAX_IN_FLIGHT = 10;
+
+function processRequests() {
+  if (PaxosState.pendingRequests.length === 0) return;
   
-  // Simplified Paxos: Skip PREPARE/PROMISE, go straight to ACCEPT
-  const acceptMsg = {
-    instanceId,
-    proposalNumber: Date.now(),
-    value: request
-  };
+  const inFlight = Math.max(0, PaxosState.sequence - PaxosState.nextExecuteSeq + 1);
+  if (inFlight >= MAX_IN_FLIGHT) return;
   
-  broadcastPaxosMessage('ACCEPT', myNodeID, acceptMsg);
-  logPaxosEvent({node: myNodeID, phase: "ACCEPT", action: `Sent ACCEPT for instance ${instanceId}`});
+  const availableSlots = Math.max(1, MAX_IN_FLIGHT - inFlight);
+  const batchSize = Math.min(availableSlots, PaxosState.pendingRequests.length);
   
-  const submitTime = request?.submitTime || Date.now();
-  
-  // Auto-commit after short delay
-  setTimeout(() => {
-    logPaxosEvent({node: myNodeID, phase: "DECIDED", action: `Value decided for instance ${instanceId}`});
+  for (let i = 0; i < batchSize; i++) {
+    const request = PaxosState.pendingRequests.shift();
+    if (!request) break;
     
-    paxosCommitLog.push({
-      committedAt: new Date().toISOString(),
-      instanceId,
-      operation: request?.operation || 'unknown',
-      value: request?.value || 0,
-      totalTimeMs: Date.now() - submitTime
-    });
-  }, 50);
+    PaxosState.sequence += 1;
+    const instanceSeq = PaxosState.sequence;
+    const proposalNumber = Date.now();
+    
+    PaxosState.instances[instanceSeq] = PaxosState.instances[instanceSeq] || {
+      instanceSeq,
+      proposalNumber,
+      value: request,
+      accepted: new Set(),
+      decided: false,
+      executed: false,
+      submitTime: request.submitTime
+    };
+    
+    PaxosState.instances[instanceSeq].value = request;
+    PaxosState.instances[instanceSeq].submitTime = request.submitTime;
+    PaxosState.instances[instanceSeq].accepted.add(myNodeID);
+    
+    const acceptMsg = {
+      instanceSeq,
+      proposalNumber,
+      value: request
+    };
+    
+    broadcastPaxosMessage('ACCEPT', myNodeID, acceptMsg);
+    logPaxosEvent({node: myNodeID, phase: "ACCEPT", action: `Broadcast ACCEPT for instance ${instanceSeq}`});
+  }
 }
 
 function handlePaxosMessage(msg, myNodeID) {
@@ -133,63 +168,111 @@ function processPaxosMessage(msg, myNodeID) {
     return;
   }
 
-  const { instanceId } = data;
+  const { instanceSeq, instanceId } = data;
+  const seq = instanceSeq || instanceId;
+  if (!seq) return;
+
+  PaxosState.instances[seq] = PaxosState.instances[seq] || {
+    instanceSeq: seq,
+    proposalNumber: data.proposalNumber || 0,
+    value: data.value,
+    accepted: new Set(),
+    decided: false,
+    executed: false,
+    submitTime: data.value?.submitTime || Date.now()
+  };
+
+  const inst = PaxosState.instances[seq];
 
   if (type === 'PREPARE') {
-    const { proposalNumber } = data;
-    
     const promiseMsg = {
-      instanceId,
-      proposalNumber,
+      instanceSeq: seq,
+      proposalNumber: data.proposalNumber,
       acceptedProposal: null,
       acceptedValue: null
     };
-    
     sendPaxosMessage('PROMISE', myNodeID, sender, promiseMsg);
-    logPaxosEvent({node: myNodeID, phase: "PROMISE", action: `Sent PROMISE to ${sender}`});
-  }
-
-  if (type === 'PROMISE') {
-    logPaxosEvent({node: myNodeID, phase: "PROMISE", action: `Received PROMISE from ${sender}`});
   }
 
   if (type === 'ACCEPT') {
     const { proposalNumber, value } = data;
     
-    let acceptedMsg = {
-      instanceId,
-      proposalNumber,
-      value
-    };
-    
+    let acceptedValue = value;
     // Apply corrupt behavior
     if (myBehavior === 'corrupt' && Math.random() < 0.5) {
-      acceptedMsg.value = {...acceptedMsg.value, value: Math.floor(Math.random() * 1000)};
-      logPaxosEvent({node: myNodeID, phase: "BYZANTINE", action: `Corrupted value to ${acceptedMsg.value.value}`});
+      acceptedValue = {...acceptedValue, value: Math.floor(Math.random() * 1000)};
     }
     
-    broadcastPaxosMessage('ACCEPTED', myNodeID, acceptedMsg);
-    logPaxosEvent({node: myNodeID, phase: "ACCEPTED", action: `Sent ACCEPTED for proposal ${proposalNumber}`});
+    inst.value = acceptedValue;
+    inst.proposalNumber = proposalNumber;
+    inst.accepted.add(myNodeID);
+    inst.accepted.add(sender);
     
-    const submitTime = value?.submitTime || Date.now();
-    // Auto-commit
-    setTimeout(() => {
-      logPaxosEvent({node: myNodeID, phase: "DECIDED", action: `Value decided for instance ${instanceId}`});
-      
-      paxosCommitLog.push({
-        committedAt: new Date().toISOString(),
-        instanceId,
-        operation: value?.operation || 'unknown',
-        value: value?.value || 0,
-        totalTimeMs: Date.now() - submitTime
-      });
-    }, 25);
+    const acceptedMsg = {
+      instanceSeq: seq,
+      proposalNumber,
+      value: acceptedValue
+    };
+    
+    // Send ACCEPTED vote back to proposer (sender)
+    sendPaxosMessage('ACCEPTED', myNodeID, sender, acceptedMsg);
+    
+    inst.decided = true;
+    executeInOrder();
   }
 
   if (type === 'ACCEPTED') {
-    const { value } = data;
+    inst.accepted.add(sender);
     
-    logPaxosEvent({node: myNodeID, phase: "ACCEPTED", action: `Received ACCEPTED from ${sender}`});
+    if (inst.accepted.size >= PaxosState.majority && !inst.decided) {
+      inst.decided = true;
+      executeInOrder();
+    }
+  }
+}
+
+function executeInOrder() {
+  while (PaxosState.instances[PaxosState.nextExecuteSeq] && 
+         PaxosState.instances[PaxosState.nextExecuteSeq].decided && 
+         !PaxosState.instances[PaxosState.nextExecuteSeq].executed) {
+    
+    const seq = PaxosState.nextExecuteSeq;
+    const inst = PaxosState.instances[seq];
+    inst.executed = true;
+    
+    const val = inst.value;
+    let commitValue = val?.value || 0;
+    
+    if (myBehavior === 'corrupt') {
+      const corruptionTypes = ['add', 'multiply', 'random'];
+      const corruptionType = corruptionTypes[Math.floor(Math.random() * corruptionTypes.length)];
+      switch (corruptionType) {
+        case 'add':
+          commitValue = commitValue + Math.floor(Math.random() * 100) + 1;
+          break;
+        case 'multiply':
+          commitValue = commitValue * (Math.floor(Math.random() * 3) + 2);
+          break;
+        case 'random':
+          commitValue = Math.floor(Math.random() * 1000) + 1;
+          break;
+      }
+    }
+    
+    paxosCommitLog.push({
+      committedAt: new Date().toISOString(),
+      instanceId: seq,
+      operation: val?.operation || 'TX',
+      value: commitValue,
+      totalTimeMs: inst.submitTime ? (Date.now() - inst.submitTime) : null
+    });
+    
+    logPaxosEvent({node: myNodeID, phase: "DECIDED", action: `Committed instance ${seq} = ${commitValue}`});
+    
+    PaxosState.nextExecuteSeq++;
+    if (myNodeID === nodeIDs[0]) {
+      setImmediate(processRequests);
+    }
   }
 }
 
@@ -202,7 +285,7 @@ function sendPaxosMessage(type, myNodeID, targetNodeID, data) {
   const signature = signPaxosMessage(msgObj);
   const signedMsg = {...msgObj, signature};
 
-  broadcastNew.sendPostRequestsToIPs(signedMsg, [nodeInfo.ip], [nodeInfo.port], ['api/paxos']);
+  broadcastNew.sendPostRequestsToIPs(signedMsg, [nodeInfo.ip], [nodeInfo.port], ['api/paxos'], myNodeID);
 }
 
 function broadcastPaxosMessage(type, myNodeID, data) {
