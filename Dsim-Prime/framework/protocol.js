@@ -99,6 +99,7 @@ function processRequests() {
       commits: new Set(),
       executed: false,
       prepared: false,
+      committed: false,
       view: PrimeState.view
     };
     
@@ -161,6 +162,7 @@ function onReceivePrePrepare(data, sender) {
     commits: new Set(),
     executed: false,
     prepared: false,
+    committed: false,
     view
   };
   
@@ -169,18 +171,14 @@ function onReceivePrePrepare(data, sender) {
   PrimeState.log[seq].prepares.add(myNodeID);
   PrimeState.log[seq].prepares.add(sender);
   
-  broadcastMessage('PREPARE', { view, seq });
-  logPrimeEvent({ node: myNodeID, phase: 'PREPARE', action: `Sent prepare for seq ${seq}` });
+  // Send PREPARE vote directly to the Leader (Linear message pattern)
+  const leaderID = getLeader(view);
+  sendMessageToNode('PREPARE', leaderID, { view, seq });
+  logPrimeEvent({ node: myNodeID, phase: 'PREPARE', action: `Sent prepare for seq ${seq} to Leader` });
 
-  // Quorum check for PREPARE (2f prepares)
-  if (PrimeState.log[seq].prepares.size >= 2 * PrimeState.f && !PrimeState.log[seq].prepared) {
-    PrimeState.log[seq].prepared = true;
-    PrimeState.log[seq].commits.add(myNodeID);
-    broadcastMessage('COMMIT', { view, seq });
-    logPrimeEvent({ node: myNodeID, phase: 'COMMIT', action: `Sent commit for seq ${seq}` });
+  if (PrimeState.log[seq].committed) {
+    executeInOrder();
   }
-  
-  executeInOrder();
 }
 
 function onReceivePrepare(data, sender) {
@@ -194,23 +192,31 @@ function onReceivePrepare(data, sender) {
     commits: new Set(),
     executed: false,
     prepared: false,
+    committed: false,
     view
   };
   
   PrimeState.log[seq].prepares.add(sender);
   
-  if (PrimeState.log[seq].prepares.size >= 2 * PrimeState.f && !PrimeState.log[seq].prepared && PrimeState.log[seq].request) {
+  // Leader collects 2f prepares and broadcasts COMMIT to all nodes
+  const leaderID = getLeader(view);
+  if (myNodeID === leaderID && PrimeState.log[seq].prepares.size >= 2 * PrimeState.f && !PrimeState.log[seq].prepared && PrimeState.log[seq].request) {
     PrimeState.log[seq].prepared = true;
-    PrimeState.log[seq].commits.add(myNodeID);
-    broadcastMessage('COMMIT', { view, seq });
-    logPrimeEvent({ node: myNodeID, phase: 'COMMIT', action: `Sent commit for seq ${seq}` });
+    PrimeState.log[seq].committed = true;
+    
+    const commitMsg = {
+      view,
+      seq,
+      request: PrimeState.log[seq].request
+    };
+    broadcastMessage('COMMIT', commitMsg);
+    logPrimeEvent({ node: myNodeID, phase: 'COMMIT', action: `Leader sent commit for seq ${seq}` });
+    executeInOrder();
   }
-
-  executeInOrder();
 }
 
 function onReceiveCommit(data, sender) {
-  const { view, seq } = data;
+  const { view, seq, request } = data;
   if (view !== PrimeState.view) return;
   
   PrimeState.log[seq] = PrimeState.log[seq] || {
@@ -220,16 +226,21 @@ function onReceiveCommit(data, sender) {
     commits: new Set(),
     executed: false,
     prepared: false,
+    committed: false,
     view
   };
   
-  PrimeState.log[seq].commits.add(sender);
+  if (request) {
+    PrimeState.log[seq].request = request;
+  }
+  PrimeState.log[seq].committed = true;
+  logPrimeEvent({ node: myNodeID, phase: 'COMMIT', action: `Received commit for seq ${seq}` });
   executeInOrder();
 }
 
 function executeInOrder() {
   while (PrimeState.log[PrimeState.nextExecuteSeq] && 
-         PrimeState.log[PrimeState.nextExecuteSeq].commits.size >= 2 * PrimeState.f + 1 && 
+         PrimeState.log[PrimeState.nextExecuteSeq].committed && 
          PrimeState.log[PrimeState.nextExecuteSeq].request && 
          !PrimeState.log[PrimeState.nextExecuteSeq].executed) {
     
@@ -282,6 +293,16 @@ function executeInOrder() {
 function signMessage(msgObj) {
   const msgString = JSON.stringify(msgObj);
   return cryptoHelper.signMessage(myPrivateKey, msgString);
+}
+
+function sendMessageToNode(type, targetNodeID, data) {
+  const targetNode = graph.nodeIPsArray.find(obj => Object.keys(obj)[0] === targetNodeID);
+  if (!targetNode) return;
+  
+  const nodeInfo = Object.values(targetNode)[0];
+  const msgObj = { type, sender: myNodeID, data };
+  msgObj.signature = signMessage(msgObj);
+  broadcastNew.sendPostRequestsToIPs(msgObj, [nodeInfo.ip], [nodeInfo.port], ['api/prime'], myNodeID);
 }
 
 function broadcastMessage(type, data) {
