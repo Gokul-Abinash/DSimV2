@@ -99,7 +99,6 @@ function processRequests() {
       commits: new Set(),
       executed: false,
       prepared: false,
-      committed: false,
       view: PrimeState.view
     };
     
@@ -108,6 +107,8 @@ function processRequests() {
     PrimeState.log[seq].prepares.add(myNodeID);
     
     const prePrepareMsg = { view: PrimeState.view, seq, request };
+    PrimeState.log[seq].preprepare = prePrepareMsg;
+    
     broadcastMessage('PRE-PREPARE', prePrepareMsg);
     logPrimeEvent({ node: myNodeID, phase: 'PRE-PREPARE', action: `Sent pre-prepare for seq ${seq}` });
   }
@@ -160,27 +161,26 @@ function onReceivePrePrepare(data, sender) {
     commits: new Set(),
     executed: false,
     prepared: false,
-    committed: false,
     view
   };
   
   PrimeState.log[seq].request = request;
   PrimeState.log[seq].preprepare = data;
   PrimeState.log[seq].prepares.add(myNodeID);
+  PrimeState.log[seq].prepares.add(sender);
   
   broadcastMessage('PREPARE', { view, seq });
   logPrimeEvent({ node: myNodeID, phase: 'PREPARE', action: `Sent prepare for seq ${seq}` });
 
-  // Check if already prepared from buffered votes
-  if (PrimeState.log[seq].prepares.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].prepared) {
+  // Quorum check for PREPARE (2f prepares)
+  if (PrimeState.log[seq].prepares.size >= 2 * PrimeState.f && !PrimeState.log[seq].prepared) {
     PrimeState.log[seq].prepared = true;
     PrimeState.log[seq].commits.add(myNodeID);
     broadcastMessage('COMMIT', { view, seq });
+    logPrimeEvent({ node: myNodeID, phase: 'COMMIT', action: `Sent commit for seq ${seq}` });
   }
   
-  if (PrimeState.log[seq].commits.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].executed) {
-    executeInOrder();
-  }
+  executeInOrder();
 }
 
 function onReceivePrepare(data, sender) {
@@ -194,22 +194,19 @@ function onReceivePrepare(data, sender) {
     commits: new Set(),
     executed: false,
     prepared: false,
-    committed: false,
     view
   };
   
   PrimeState.log[seq].prepares.add(sender);
   
-  if (PrimeState.log[seq].prepares.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].prepared) {
+  if (PrimeState.log[seq].prepares.size >= 2 * PrimeState.f && !PrimeState.log[seq].prepared && PrimeState.log[seq].request) {
     PrimeState.log[seq].prepared = true;
     PrimeState.log[seq].commits.add(myNodeID);
     broadcastMessage('COMMIT', { view, seq });
     logPrimeEvent({ node: myNodeID, phase: 'COMMIT', action: `Sent commit for seq ${seq}` });
   }
 
-  if (PrimeState.log[seq].commits.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].executed) {
-    executeInOrder();
-  }
+  executeInOrder();
 }
 
 function onReceiveCommit(data, sender) {
@@ -223,20 +220,17 @@ function onReceiveCommit(data, sender) {
     commits: new Set(),
     executed: false,
     prepared: false,
-    committed: false,
     view
   };
   
   PrimeState.log[seq].commits.add(sender);
-  
-  if (PrimeState.log[seq].commits.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].executed) {
-    executeInOrder();
-  }
+  executeInOrder();
 }
 
 function executeInOrder() {
   while (PrimeState.log[PrimeState.nextExecuteSeq] && 
          PrimeState.log[PrimeState.nextExecuteSeq].commits.size >= 2 * PrimeState.f + 1 && 
+         PrimeState.log[PrimeState.nextExecuteSeq].request && 
          !PrimeState.log[PrimeState.nextExecuteSeq].executed) {
     
     const seq = PrimeState.nextExecuteSeq;
