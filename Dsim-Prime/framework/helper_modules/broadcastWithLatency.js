@@ -1,16 +1,10 @@
-const axios = require('axios');
 const http = require('http');
 
 // Persistent HTTP Agent with Keep-Alive to eliminate socket exhaustion across 128 nodes
 const httpAgent = new http.Agent({
   keepAlive: true,
-  maxSockets: 500,
-  maxFreeSockets: 100,
-  timeout: 15000
-});
-
-const apiClient = axios.create({
-  httpAgent,
+  maxSockets: 2000,
+  maxFreeSockets: 512,
   timeout: 10000
 });
 
@@ -19,70 +13,60 @@ try {
   latencyConfig = require('../../../latency-config.js');
 } catch (e) {}
 
-// Message queue for delayed delivery
-const messageQueue = [];
-let messageId = 0;
+function sendSingleRequest(ip, port, endpoint, bodyStr, delayMs = 0) {
+  if (delayMs > 0) {
+    setTimeout(() => sendSingleRequest(ip, port, endpoint, bodyStr, 0), delayMs);
+    return;
+  }
 
-async function sendPostRequestsToIPs(postData, ipsArray, portArray, endpointArray, fromNode = null) {
-  const responses = [];
+  const req = http.request({
+    hostname: ip,
+    port: port,
+    path: `/${endpoint}`,
+    method: 'POST',
+    agent: httpAgent,
+    headers: {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(bodyStr)
+    },
+    timeout: 5000
+  }, (res) => {
+    res.resume();
+  });
+
+  req.on('error', () => {});
+  req.on('timeout', () => {
+    req.destroy();
+  });
+
+  req.write(bodyStr);
+  req.end();
+}
+
+function sendPostRequestsToIPs(postData, ipsArray, portArray, endpointArray, fromNode = null) {
+  const bodyStr = typeof postData === 'string' ? postData : JSON.stringify(postData);
   
-  try {
-    const promises = ipsArray.map(async (ip, index) => {
-      const port = portArray[index];
-      const endpoint = endpointArray[index];
-      const url = `http://${ip}:${port}/${endpoint}`;
-      
-      // Determine target node for latency calculation
-      const toNode = getNodeByPort(port);
-      
-      // Check for Byzantine behavior
+  for (let i = 0; i < ipsArray.length; i++) {
+    const ip = ipsArray[i];
+    const port = portArray[i];
+    const endpoint = endpointArray[i];
+    const toNode = getNodeByPort(port);
+    
+    let delayMs = 0;
+    if (latencyConfig && typeof latencyConfig.generateLatency === 'function') {
       let byzantineBehavior = null;
       try {
         const byzantineConfig = require('../byzantine-config.js');
         byzantineBehavior = byzantineConfig[fromNode];
-      } catch (error) {
-        // No Byzantine config
-      }
-      
-      let finalLatency = 0;
-      if (latencyConfig && typeof latencyConfig.generateLatency === 'function') {
-        const latency = latencyConfig.generateLatency(fromNode, toNode, byzantineBehavior);
-        if (latency === -1) {
-          responses.push({ ip, data: null, error: 'Message dropped by Byzantine behavior' });
-          return;
-        }
-        finalLatency = latencyConfig.addJitter ? latencyConfig.addJitter(latency, 15) : latency;
-      }
-      
-      try {
-        if (finalLatency > 0) {
-          await new Promise(resolve => setTimeout(resolve, finalLatency));
-        }
-        
-        const response = await apiClient.post(url, postData, {
-          headers: { 'Content-Type': 'application/json' }
-        });
-        
-        responses.push({ ip, data: response.data, error: null, latency: finalLatency });
-      } catch (error) {
-        responses.push({ ip, data: null, error: error.message, latency: finalLatency });
-      }
-    });
+      } catch (error) {}
 
-    await Promise.all(promises);
+      const latency = latencyConfig.generateLatency(fromNode, toNode, byzantineBehavior);
+      if (latency === -1) continue; // dropped
+      delayMs = latencyConfig.addJitter ? latencyConfig.addJitter(latency, 15) : latency;
+    }
     
-    // Log results
-    responses.forEach(result => {
-      if (result.error && result.error !== 'Message dropped by Byzantine behavior') {
-        console.error(`[NETWORK] Error to ${result.ip}:`, result.error);
-      }
-    });
-    
-  } catch (error) {
-    console.error('[NETWORK] General Error:', error.message);
+    sendSingleRequest(ip, port, endpoint, bodyStr, delayMs);
   }
-
-  return responses;
 }
 
 // Helper function to determine node by port

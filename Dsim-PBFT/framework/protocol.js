@@ -4,7 +4,7 @@ const cryptoHelper = require('./helper_modules/cryptoHelper.js');
 const crypto = require('crypto');
 
 // Enable or disable console logs here - can be controlled via environment variable
-const ENABLE_LOGGING = process.env.PBFT_VERBOSE !== 'false' && process.env.PBFT_VERBOSE !== '0';
+const ENABLE_LOGGING = process.env.PBFT_VERBOSE === 'true' || process.env.PBFT_VERBOSE === '1';
 
 // In-memory array to store all PBFT log events for API access
 const pbftLog = [];
@@ -66,7 +66,7 @@ function setNodeContext(nodeID) {
   
   // Primary processes requests with optimized intervals
   setInterval(() => {
-    if (myNodeID === PBFTState.primary && PBFTState.pendingRequests.length > 0 && !PBFTState.processingTransaction) {
+    if (myNodeID === PBFTState.primary && PBFTState.pendingRequests.length > 0) {
       processNextRequest();
     }
   }, 10);
@@ -74,7 +74,7 @@ function setNodeContext(nodeID) {
   // All nodes check for sequential execution with faster polling
   setInterval(() => {
     executeInOrder();
-  }, 20);
+  }, 10);
 }
 
 function signPBFTMessage(msgObj) {
@@ -99,16 +99,16 @@ function getPrimary(view) {
 // PBFT State Checkers
 function isPrepared(logEntry) {
   return (
-    logEntry.preprepare &&
-    logEntry.prepares &&
+    Boolean(logEntry.preprepare) &&
+    Boolean(logEntry.prepares) &&
     logEntry.prepares.size >= 2 * PBFTState.f
   );
 }
 
 function isCommittedLocal(logEntry) {
   return (
-    logEntry.prepared &&
-    logEntry.commits &&
+    Boolean(logEntry.prepared) &&
+    Boolean(logEntry.commits) &&
     logEntry.commits.size >= 2 * PBFTState.f + 1
   );
 }
@@ -308,6 +308,7 @@ function handlePBFTMessage(msg, myNodeID) {
     logEntry.digest = data.digest;
     logEntry.preprepare = data;
     logEntry.view = data.view;
+    logEntry.prepares.add(myNodeID); // Record self prepare
     logPBFTEvent({node: myNodeID, phase: "PRE-PREPARE", action: `Accepted PRE-PREPARE for req#${seq} from ${sender}`});
     
     // Broadcasting the PREPARE Message
@@ -319,6 +320,27 @@ function handlePBFTMessage(msg, myNodeID) {
     
     broadcastPBFTMessage('PREPARE', myNodeID, seq, prepareMsg);
     logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Broadcasted PREPARE for req #${seq}`});
+
+    // Check if prepared already reached
+    if (isPrepared(logEntry) && !logEntry.prepared) {
+      logEntry.prepared = true;
+      logEntry.commits.add(myNodeID); // Record self commit
+      logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Request #${seq} is now prepared.`});
+      
+      const commitMsg = {
+        view: PBFTState.view,
+        seq,
+        digest: data.digest
+      };
+      
+      broadcastPBFTMessage('COMMIT', myNodeID, seq, commitMsg);
+      logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Broadcasted COMMIT for req #${seq}`});
+      
+      if (isCommittedLocal(logEntry) && !logEntry.committed_local) {
+        logEntry.committed_local = true;
+        executeInOrder();
+      }
+    }
   }
 
   // Handling the PREPARE Phase
@@ -342,6 +364,7 @@ function handlePBFTMessage(msg, myNodeID) {
     // If prepared state reached, mark and broadcast COMMIT
     if (isPrepared(logEntry) && !logEntry.prepared) {
       logEntry.prepared = true;
+      logEntry.commits.add(myNodeID); // Record self commit
       logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Request #${seq} is now prepared.`});
       
       const commitMsg = {
@@ -352,6 +375,11 @@ function handlePBFTMessage(msg, myNodeID) {
       
       broadcastPBFTMessage('COMMIT', myNodeID, seq, commitMsg);
       logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Broadcasted COMMIT for req #${seq}`});
+
+      if (isCommittedLocal(logEntry) && !logEntry.committed_local) {
+        logEntry.committed_local = true;
+        executeInOrder();
+      }
     }
   }
 
