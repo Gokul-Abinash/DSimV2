@@ -2,7 +2,7 @@ const graph = require('./helper_modules/graph.js');
 const broadcastNew = require('./helper_modules/broadcastWithLatency.js');
 const cryptoHelper = require('./helper_modules/cryptoHelper.js');
 
-const ENABLE_LOGGING = true;
+const ENABLE_LOGGING = false;
 const HEARTBEAT_INTERVAL = 1000;
 
 const raftLog = [];
@@ -32,7 +32,8 @@ const RaftState = {
   majority: 3,
   nodes: [],
   leader: null,
-  requestQueue: []
+  isReplicating: false,
+  pendingReplication: false
 };
 
 const nodeIDs = graph.nodeIPsArray.map(obj => Object.keys(obj)[0]);
@@ -43,7 +44,6 @@ function setNodeContext(nodeID) {
   try {
     const byzantineConfig = require('./byzantine-config.js');
     myBehavior = byzantineConfig[nodeID] || 'honest';
-    console.log(`Node ${nodeID} behavior: ${myBehavior}`);
   } catch (error) {
     myBehavior = 'honest';
   }
@@ -97,7 +97,10 @@ function verifyRaftSignature(sender, msgObj, signature) {
 function becomeFollower(leader) {
   RaftState.state = 'follower';
   RaftState.leader = leader;
-  clearInterval(RaftState.heartbeatInterval);
+  if (RaftState.heartbeatInterval) {
+    clearInterval(RaftState.heartbeatInterval);
+    RaftState.heartbeatInterval = null;
+  }
   logRaftEvent({node: myNodeID, phase: "STATE", action: `Became FOLLOWER, leader: ${leader}`});
 }
 
@@ -116,12 +119,10 @@ function becomeLeader() {
   
   // Start heartbeats
   sendHeartbeats();
+  if (RaftState.heartbeatInterval) clearInterval(RaftState.heartbeatInterval);
   RaftState.heartbeatInterval = setInterval(() => {
     sendHeartbeats();
   }, HEARTBEAT_INTERVAL);
-  
-  // Process queued requests
-  processRequestQueue();
 }
 
 function sendHeartbeats() {
@@ -162,22 +163,10 @@ function sendHeartbeats() {
 }
 
 function handleClientRequest(request, myNodeID) {
-  // Crash behavior disabled during active testing to ensure completion
-  
   if (RaftState.state !== 'leader') {
     logRaftEvent({node: myNodeID, phase: "CLIENT", action: `Not leader, ignoring request`});
     return;
   }
-  
-  // Add to queue for sequential processing
-  RaftState.requestQueue.push(request);
-  processRequestQueue();
-}
-
-function processRequestQueue() {
-  if (RaftState.state !== 'leader' || RaftState.requestQueue.length === 0) return;
-  
-  const request = RaftState.requestQueue.shift();
   
   const logEntry = {
     term: RaftState.currentTerm,
@@ -187,13 +176,25 @@ function processRequestQueue() {
   };
   
   RaftState.log.push(logEntry);
+  RaftState.matchIndex[myNodeID] = logEntry.index;
   logRaftEvent({node: myNodeID, phase: "CLIENT", action: `Added entry ${logEntry.index} to log`, details: request});
   
-  // Replicate to followers and wait for majority
-  replicateAndCommit(logEntry);
+  // Trigger pipelined replication
+  triggerReplication();
 }
 
-function replicateAndCommit(logEntry) {
+let replicationTimer = null;
+function triggerReplication() {
+  if (replicationTimer) return;
+  replicationTimer = setTimeout(() => {
+    replicationTimer = null;
+    broadcastReplication();
+  }, 10);
+}
+
+function broadcastReplication() {
+  if (RaftState.state !== 'leader' || RaftState.log.length === 0) return;
+  
   const targetIPs = [];
   const targetPorts = [];
   const targetEndpoints = [];
@@ -210,15 +211,15 @@ function replicateAndCommit(logEntry) {
     }
   }
   
-  const prevLogIndex = logEntry.index - 1;
-  const prevLogTerm = prevLogIndex > 0 ? RaftState.log[prevLogIndex - 1].term : 0;
+  if (targetIPs.length === 0) return;
   
+  // Send the full current log / latest entries to all followers
   const appendEntries = {
     term: RaftState.currentTerm,
     leaderId: myNodeID,
-    prevLogIndex,
-    prevLogTerm,
-    entries: [logEntry],
+    prevLogIndex: 0,
+    prevLogTerm: 0,
+    entries: RaftState.log,
     leaderCommit: RaftState.commitIndex
   };
   
@@ -227,41 +228,10 @@ function replicateAndCommit(logEntry) {
   const signedMsg = { ...msgObj, signature };
   
   broadcastNew.sendPostRequestsToIPs(signedMsg, targetIPs, targetPorts, targetEndpoints, myNodeID);
-  
-  // Wait for majority replication before committing
-  let attempts = 0;
-  const checkMajority = () => {
-    attempts++;
-    if (attempts > 20 || RaftState.state !== 'leader') return;
-    
-    let replicationCount = 1; // Leader counts as 1
-    for (const nodeId of nodeIDs) {
-      if (nodeId !== myNodeID && RaftState.matchIndex[nodeId] >= logEntry.index) {
-        replicationCount++;
-      }
-    }
-    
-    if (replicationCount >= RaftState.majority) {
-      // Majority achieved, commit this entry
-      if (logEntry.index > RaftState.commitIndex) {
-        RaftState.commitIndex = logEntry.index;
-        applyCommittedEntries();
-      }
-      // Process next request
-      setTimeout(() => processRequestQueue(), 25);
-    } else {
-      // Wait and check again
-      setTimeout(checkMajority, 50);
-    }
-  };
-  
-  setTimeout(checkMajority, 25);
 }
 
 function handleRaftMessage(msg, myNodeID) {
   const { type, sender, data, signature } = msg;
-  
-  // Crash behavior disabled during active testing to ensure completion
 
   const msgToVerify = {type, sender, data};
   if (!verifyRaftSignature(sender, msgToVerify, signature)) {
@@ -273,36 +243,32 @@ function handleRaftMessage(msg, myNodeID) {
     const { term, leaderId, prevLogIndex, prevLogTerm, entries, leaderCommit } = data;
     
     let success = false;
-    
     RaftState.currentTerm = Math.max(RaftState.currentTerm, term);
     RaftState.leader = leaderId;
     
-    // Check log consistency
-    if (prevLogIndex === 0 || 
-        (prevLogIndex <= RaftState.log.length && 
-         (prevLogIndex === 0 || RaftState.log[prevLogIndex - 1].term === prevLogTerm))) {
-      
-      success = true;
-      
-      if (entries.length > 0) {
-        // Append new entries
+    if (entries && entries.length > 0) {
+      if (prevLogIndex === 0) {
+        RaftState.log = [...entries];
+        success = true;
+      } else if (prevLogIndex <= RaftState.log.length) {
         RaftState.log = RaftState.log.slice(0, prevLogIndex);
         RaftState.log.push(...entries);
-        
-        logRaftEvent({node: myNodeID, phase: "REPLICATION", action: `Appended ${entries.length} entries from ${leaderId}`});
+        success = true;
       }
-      
-      // Update commit index
-      if (leaderCommit > RaftState.commitIndex) {
-        RaftState.commitIndex = Math.min(leaderCommit, RaftState.log.length);
-        applyCommittedEntries();
-      }
+    } else {
+      success = true;
+    }
+    
+    // Update commit index
+    if (leaderCommit > RaftState.commitIndex) {
+      RaftState.commitIndex = Math.min(leaderCommit, RaftState.log.length);
+      applyCommittedEntries();
     }
     
     const appendResponse = {
       term: RaftState.currentTerm,
       success,
-      matchIndex: success ? prevLogIndex + entries.length : 0
+      matchIndex: RaftState.log.length
     };
     
     sendRaftMessage('APPEND_ENTRIES_RESPONSE', myNodeID, sender, appendResponse);
@@ -314,8 +280,9 @@ function handleRaftMessage(msg, myNodeID) {
     if (success) {
       RaftState.matchIndex[sender] = Math.max(RaftState.matchIndex[sender] || 0, matchIndex);
       RaftState.nextIndex[sender] = matchIndex + 1;
+      updateCommitIndex();
     } else {
-      RaftState.nextIndex[sender] = Math.max(1, RaftState.nextIndex[sender] - 1);
+      RaftState.nextIndex[sender] = Math.max(1, (RaftState.nextIndex[sender] || 2) - 1);
     }
   }
 }
@@ -333,8 +300,12 @@ function updateCommitIndex() {
     }
     
     if (replicationCount >= RaftState.majority) {
-      RaftState.commitIndex = i;
-      applyCommittedEntries();
+      if (i > RaftState.commitIndex) {
+        RaftState.commitIndex = i;
+        applyCommittedEntries();
+        // Notify followers of updated commit index
+        triggerReplication();
+      }
       break;
     }
   }
@@ -344,17 +315,18 @@ function applyCommittedEntries() {
   while (RaftState.lastApplied < RaftState.commitIndex) {
     RaftState.lastApplied++;
     const entry = RaftState.log[RaftState.lastApplied - 1];
-    
-    logRaftEvent({node: myNodeID, phase: "COMMIT", action: `Applied entry ${RaftState.lastApplied}`, details: entry.command});
-    
-    raftCommitLog.push({
-      committedAt: new Date().toISOString(),
-      index: entry.index,
-      term: entry.term,
-      operation: entry.command?.operation || 'unknown',
-      value: entry.command?.value || 0,
-      totalTimeMs: entry.submitTime ? (Date.now() - entry.submitTime) : null
-    });
+    if (entry) {
+      logRaftEvent({node: myNodeID, phase: "COMMIT", action: `Applied entry ${RaftState.lastApplied}`, details: entry.command});
+      
+      raftCommitLog.push({
+        committedAt: new Date().toISOString(),
+        index: entry.index,
+        term: entry.term,
+        operation: entry.command?.operation || 'unknown',
+        value: entry.command?.value || 0,
+        totalTimeMs: entry.submitTime ? (Date.now() - entry.submitTime) : null
+      });
+    }
   }
 }
 

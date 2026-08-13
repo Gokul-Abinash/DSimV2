@@ -83,14 +83,17 @@ function handleClientRequest(request, myNodeID) {
   // Queue request for sequential processing
   SBFTState.pendingRequests.push({ ...request, submitTime: Date.now() });
   logSBFTEvent({ node: myNodeID, phase: "CLIENT", action: `Request queued for processing`, details: request });
+  if (myNodeID === nodeIDs[0]) {
+    processNextRequest();
+  }
 }
 
 // Process requests with controlled concurrency
 function processNextRequest() {
   if (SBFTState.pendingRequests.length === 0) return;
   
-  // Allow up to 3 concurrent transactions
-  const maxConcurrent = 3;
+  // Allow up to 5 concurrent transactions
+  const maxConcurrent = 5;
   const activeTransactions = Object.values(SBFTState.log).filter(entry => 
     entry && !entry.executed
   ).length;
@@ -239,6 +242,9 @@ function processSBFTMessage(msg, myNodeID) {
       }
       
       // Transaction completed
+      if (myNodeID === nodeIDs[0]) {
+        setImmediate(processNextRequest);
+      }
     }
   }
 }
