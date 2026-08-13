@@ -74,7 +74,6 @@ app.get('/api/hotstuff-commit-log', (req, res) => {
 // Client request endpoint
 app.post('/api/client', (req, res) => {
   protocol.handleClientRequest(req.body, myNodeID);
-  console.log(req.body);
   res.json({ ok: true, msg: "Request handled" });
 });
 

@@ -3,7 +3,7 @@ const broadcastNew = require('./helper_modules/broadcastWithLatency.js');
 const cryptoHelper = require('./helper_modules/cryptoHelper.js');
 const crypto = require('crypto');
 
-const ENABLE_LOGGING = true;
+const ENABLE_LOGGING = process.env.SBFT_VERBOSE === 'true' || process.env.SBFT_VERBOSE === '1';
 
 const sbftLog = [];
 const sbftCommitLog = [];
@@ -22,11 +22,11 @@ function logSBFTEvent(event) {
 
 const SBFTState = {
   sequence: 0,
+  nextExecuteSeq: 1,
   f: 1,
   log: {},
   pendingRequests: [],
-  executedRequests: new Set(),
-  processingTransaction: false
+  executedRequests: new Set()
 };
 
 const nodeIDs = graph.nodeIPsArray.map(obj => Object.keys(obj)[0]);
@@ -42,7 +42,7 @@ function setNodeContext(nodeID) {
   try {
     const byzantineConfig = require('./byzantine-config.js');
     myBehavior = byzantineConfig[nodeID] || 'honest';
-    logSBFTEvent({node: myNodeID, phase: "INIT", action: `Byzantine behavior: ${myBehavior}`});
+    if (ENABLE_LOGGING) logSBFTEvent({node: myNodeID, phase: "INIT", action: `Byzantine behavior: ${myBehavior}`});
   } catch (error) {
     myBehavior = 'honest';
   }
@@ -56,12 +56,15 @@ function setNodeContext(nodeID) {
   
   logSBFTEvent({node: myNodeID, phase: "INIT", action: `Node role: ${role}, primary: ${primary}`});
   
-  // Faster processing timer for better throughput
   setInterval(() => {
     if (myNodeID === nodeIDs[0] && SBFTState.pendingRequests.length > 0) {
       processNextRequest();
     }
-  }, 100);
+  }, 10);
+
+  setInterval(() => {
+    executeInOrder();
+  }, 10);
 }
 
 function signSBFTMessage(msgObj) {
@@ -80,7 +83,6 @@ function verifySBFTSignature(sender, msgObj, signature) {
 }
 
 function handleClientRequest(request, myNodeID) {
-  // Queue request for sequential processing
   SBFTState.pendingRequests.push({ ...request, submitTime: Date.now() });
   logSBFTEvent({ node: myNodeID, phase: "CLIENT", action: `Request queued for processing`, details: request });
   if (myNodeID === nodeIDs[0]) {
@@ -88,38 +90,46 @@ function handleClientRequest(request, myNodeID) {
   }
 }
 
+const MAX_IN_FLIGHT = 10;
+
 // Process requests with controlled concurrency
 function processNextRequest() {
   if (SBFTState.pendingRequests.length === 0) return;
   
-  // Allow up to 5 concurrent transactions
-  const maxConcurrent = 5;
-  const activeTransactions = Object.values(SBFTState.log).filter(entry => 
-    entry && !entry.executed
-  ).length;
+  const inFlight = Math.max(0, SBFTState.sequence - SBFTState.nextExecuteSeq + 1);
+  if (inFlight >= MAX_IN_FLIGHT) return;
   
-  if (activeTransactions >= maxConcurrent) return;
+  const availableSlots = Math.max(1, MAX_IN_FLIGHT - inFlight);
+  const batchSize = Math.min(availableSlots, SBFTState.pendingRequests.length);
   
-  const request = SBFTState.pendingRequests.shift();
-  SBFTState.sequence += 1;
-  const seq = SBFTState.sequence;
+  for (let i = 0; i < batchSize; i++) {
+    const request = SBFTState.pendingRequests.shift();
+    if (!request) break;
 
-  SBFTState.log[seq] = {
-    request,
-    commits: new Set(),
-    executed: false,
-    submitTime: request.submitTime
-  };
+    SBFTState.sequence += 1;
+    const seq = SBFTState.sequence;
 
-  logSBFTEvent({ node: myNodeID, phase: "CLIENT", action: `Processing request #${seq}`, details: request });
+    SBFTState.log[seq] = SBFTState.log[seq] || {
+      request: null,
+      commits: new Set(),
+      executed: false,
+      committed: false
+    };
 
-  const prepareMsg = {
-    seq,
-    request
-  };
-  
-  broadcastSBFTMessage('PREPARE', myNodeID, seq, prepareMsg);
-  logSBFTEvent({ node: myNodeID, phase: "PREPARE", action: `Primary sent PREPARE for req #${seq}` });
+    SBFTState.log[seq].request = request;
+    SBFTState.log[seq].submitTime = request.submitTime;
+    SBFTState.log[seq].commits.add(myNodeID); // Self commit vote
+
+    logSBFTEvent({ node: myNodeID, phase: "CLIENT", action: `Processing request #${seq}`, details: request });
+
+    const prepareMsg = {
+      seq,
+      request
+    };
+    
+    broadcastSBFTMessage('PREPARE', myNodeID, seq, prepareMsg);
+    logSBFTEvent({ node: myNodeID, phase: "PREPARE", action: `Primary sent PREPARE for req #${seq}` });
+  }
 }
 
 function handleSBFTMessage(msg, myNodeID) {
@@ -129,11 +139,11 @@ function handleSBFTMessage(msg, myNodeID) {
   // Apply Byzantine behavior
   if (myBehavior === 'silent' && messageCount > 2) {
     logSBFTEvent({node: myNodeID, phase: "BYZANTINE", action: `Silent node ignoring message #${messageCount}`});
-    return; // Silent nodes stop responding after initial messages
+    return;
   }
   
   if (myBehavior === 'delay') {
-    const delay = Math.random() * 2000 + 1000; // 1-3 second delay
+    const delay = Math.random() * 2000 + 1000;
     logSBFTEvent({node: myNodeID, phase: "BYZANTINE", action: `Delaying message by ${delay.toFixed(0)}ms`});
     setTimeout(() => processSBFTMessage(msg, myNodeID), delay);
     return;
@@ -154,17 +164,19 @@ function processSBFTMessage(msg, myNodeID) {
   SBFTState.log[seq] = SBFTState.log[seq] || {
     request: null,
     commits: new Set(),
-    executed: false
+    executed: false,
+    committed: false
   };
   
   let logEntry = SBFTState.log[seq];
 
   if (type === 'PREPARE') {
     logEntry.request = data.request;
+    logEntry.commits.add(myNodeID); // Add self to commits
     
     logSBFTEvent({node: myNodeID, phase: "PREPARE", action: `Accepted PREPARE for req#${seq} from ${sender}`});
 
-    // All nodes send COMMIT (with Byzantine behavior)
+    // All nodes send COMMIT
     let commitMsg = {
       seq,
       request: data.request
@@ -193,8 +205,11 @@ function processSBFTMessage(msg, myNodeID) {
     broadcastSBFTMessage('COMMIT', myNodeID, seq, commitMsg);
     logSBFTEvent({node: myNodeID, phase: "COMMIT", action: `Sent COMMIT for req #${seq}`});
     
-    // Add self to commits
-    logEntry.commits.add(myNodeID);
+    const requiredQuorum = 2 * SBFTState.f + 1;
+    if (logEntry.commits.size >= requiredQuorum) {
+      logEntry.committed = true;
+      executeInOrder();
+    }
   }
 
   if (type === 'COMMIT') {
@@ -203,48 +218,60 @@ function processSBFTMessage(msg, myNodeID) {
 
     // Need 2f+1 commits
     const requiredQuorum = 2 * SBFTState.f + 1;
-    if (logEntry.commits.size >= requiredQuorum && !logEntry.executed) {
-      logEntry.executed = true;
-      logSBFTEvent({node: myNodeID, phase: "EXECUTION", action: `Executed request #${seq} ✅`});
-      
-      // Prevent duplicate execution
-      if (!SBFTState.executedRequests.has(logEntry.request?.id)) {
-        SBFTState.executedRequests.add(logEntry.request?.id);
+    if (logEntry.commits.size >= requiredQuorum && logEntry.request) {
+      logEntry.committed = true;
+      executeInOrder();
+    }
+  }
+}
 
-        // Apply corrupt behavior to final commit
-        let commitValue = logEntry.request?.value || 0;
-        if (myBehavior === 'corrupt') {
-          // Randomly corrupt the value
-          const corruptionTypes = ['add', 'multiply', 'random'];
-          const corruptionType = corruptionTypes[Math.floor(Math.random() * corruptionTypes.length)];
-          
-          switch (corruptionType) {
-            case 'add':
-              commitValue = commitValue + Math.floor(Math.random() * 100) + 1;
-              break;
-            case 'multiply':
-              commitValue = commitValue * (Math.floor(Math.random() * 3) + 2);
-              break;
-            case 'random':
-              commitValue = Math.floor(Math.random() * 1000) + 1;
-              break;
-          }
-          logSBFTEvent({node: myNodeID, phase: "CORRUPT", action: `Corrupted value ${logEntry.request?.value} -> ${commitValue}`});
+function executeInOrder() {
+  while (SBFTState.log[SBFTState.nextExecuteSeq] && 
+         SBFTState.log[SBFTState.nextExecuteSeq].committed && 
+         SBFTState.log[SBFTState.nextExecuteSeq].request && 
+         !SBFTState.log[SBFTState.nextExecuteSeq].executed) {
+    
+    const seq = SBFTState.nextExecuteSeq;
+    const logEntry = SBFTState.log[seq];
+    logEntry.executed = true;
+    
+    const request = logEntry.request;
+    if (request && !SBFTState.executedRequests.has(request.id)) {
+      SBFTState.executedRequests.add(request.id);
+
+      let commitValue = request.value || 0;
+      if (myBehavior === 'corrupt') {
+        const corruptionTypes = ['add', 'multiply', 'random'];
+        const corruptionType = corruptionTypes[Math.floor(Math.random() * corruptionTypes.length)];
+        
+        switch (corruptionType) {
+          case 'add':
+            commitValue = commitValue + Math.floor(Math.random() * 100) + 1;
+            break;
+          case 'multiply':
+            commitValue = commitValue * (Math.floor(Math.random() * 3) + 2);
+            break;
+          case 'random':
+            commitValue = Math.floor(Math.random() * 1000) + 1;
+            break;
         }
+        logSBFTEvent({node: myNodeID, phase: "CORRUPT", action: `Corrupted value ${request.value} -> ${commitValue}`});
+      }
 
-        sbftCommitLog.push({
-          committedAt: new Date().toISOString(),
-          operation: logEntry.request?.operation || 'unknown',
-          value: commitValue,
-          sequence: seq,
-          totalTimeMs: logEntry.submitTime ? (Date.now() - logEntry.submitTime) : null
-        });
-      }
+      sbftCommitLog.push({
+        committedAt: new Date().toISOString(),
+        operation: request.operation || 'unknown',
+        value: commitValue,
+        sequence: seq,
+        totalTimeMs: logEntry.submitTime ? (Date.now() - logEntry.submitTime) : (request.submitTime ? (Date.now() - request.submitTime) : null)
+      });
       
-      // Transaction completed
-      if (myNodeID === nodeIDs[0]) {
-        setImmediate(processNextRequest);
-      }
+      logSBFTEvent({node: myNodeID, phase: "EXECUTION", action: `Executed request #${seq} ✅`});
+    }
+    
+    SBFTState.nextExecuteSeq++;
+    if (myNodeID === nodeIDs[0]) {
+      setImmediate(processNextRequest);
     }
   }
 }

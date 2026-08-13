@@ -3,7 +3,7 @@ const broadcastNew = require('./helper_modules/broadcastWithLatency.js');
 const cryptoHelper = require('./helper_modules/cryptoHelper.js');
 const crypto = require('crypto');
 
-const ENABLE_LOGGING = true;
+const ENABLE_LOGGING = process.env.HOTSTUFF_VERBOSE === 'true' || process.env.HOTSTUFF_VERBOSE === '1';
 const NEXT_VIEW_TIMEOUT = 2000;
 const PACEMAKER_INTERVAL = 100;
 
