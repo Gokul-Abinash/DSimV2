@@ -102,6 +102,8 @@ check_status() {
 
 run_tests() {
     local custom_values=""
+    local count=""
+    local concurrency="5"
     
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -109,11 +111,26 @@ run_tests() {
                 custom_values="$2"
                 shift 2
                 ;;
+            --count)
+                count="$2"
+                shift 2
+                ;;
+            --concurrency)
+                concurrency="$2"
+                shift 2
+                ;;
             *)
                 shift
                 ;;
         esac
     done
+    
+    if [ -n "$count" ]; then
+        echo "Running load test with $count transactions on HotStuff..."
+        cd "$SCRIPT_DIR/.." || exit 1
+        node benchmark-metrics.js hotstuff --requests "$count" --concurrency "$concurrency"
+        return
+    fi
     
     if [ -n "$custom_values" ]; then
         IFS=',' read -ra VALUES <<< "$custom_values"
@@ -149,7 +166,7 @@ EOF
 }
 
 run_verify() {
-    echo "Verifying consensus across all 64 nodes in the cluster..."
+    echo "Verifying consensus across all 128 nodes in the cluster..."
     cd "$FRAMEWORK_DIR" || exit 1
     node verification.js
 }

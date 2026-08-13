@@ -77,7 +77,7 @@ check_status() {
             echo "❌ Port $port: STOPPED"
         fi
     done
-    echo "Running on this machine: $running / 16 nodes"
+    echo "Running on this machine: $running / ${#PORTS[@]} nodes"
 }
 
 run_tests() {
@@ -142,7 +142,7 @@ EOF
 }
 
 run_verify() {
-    echo "Verifying consensus across all 64 nodes in the cluster..."
+    echo "Verifying consensus across all 128 nodes in the cluster..."
     cd "$FRAMEWORK_DIR" || exit 1
     node verification.js
 }
