@@ -96,23 +96,6 @@ function getPrimary(view) {
   return nodeIDs[view % nodeIDs.length];
 }
 
-// PBFT State Checkers
-function isPrepared(logEntry) {
-  return (
-    Boolean(logEntry.preprepare) &&
-    Boolean(logEntry.prepares) &&
-    logEntry.prepares.size >= 2 * PBFTState.f
-  );
-}
-
-function isCommittedLocal(logEntry) {
-  return (
-    Boolean(logEntry.prepared) &&
-    Boolean(logEntry.commits) &&
-    logEntry.commits.size >= 2 * PBFTState.f + 1
-  );
-}
-
 // Handling the client request
 function handleClientRequest(request, myNodeID) {
   if (PBFTState.inViewChange) {
@@ -165,6 +148,7 @@ function processNextRequest() {
     PBFTState.log[seq].request = request;
     PBFTState.log[seq].digest = digest;
     PBFTState.log[seq].submitTime = request.submitTime;
+    PBFTState.log[seq].prepares.add(myNodeID);
 
     const prePrepareMsg = {
       view: PBFTState.view,
@@ -173,25 +157,9 @@ function processNextRequest() {
       request
     };
     
-    // Use setImmediate for non-blocking batch processing
-    setImmediate(() => {
-      broadcastPBFTMessage('PRE-PREPARE', myNodeID, seq, prePrepareMsg);
-      
-      const msgObj = {
-        type: 'PRE-PREPARE',
-        sender: myNodeID,
-        seq,
-        data: prePrepareMsg,
-        signature: signPBFTMessage({
-          type: 'PRE-PREPARE',
-          sender: myNodeID,
-          seq,
-          data: prePrepareMsg
-        })
-      };
-      
-      handlePBFTMessage(msgObj, myNodeID);
-    });
+    PBFTState.log[seq].preprepare = prePrepareMsg;
+    broadcastPBFTMessage('PRE-PREPARE', myNodeID, seq, prePrepareMsg);
+    logPBFTEvent({node: myNodeID, phase: "PRE-PREPARE", action: `Sent PRE-PREPARE for seq #${seq}`});
   }
 }
 
@@ -199,47 +167,49 @@ function processNextRequest() {
 function executeInOrder() {
   while (PBFTState.log[PBFTState.nextExecuteSeq] && 
          PBFTState.log[PBFTState.nextExecuteSeq].committed_local && 
+         PBFTState.log[PBFTState.nextExecuteSeq].request && 
          !PBFTState.log[PBFTState.nextExecuteSeq].executed) {
     
     const seq = PBFTState.nextExecuteSeq;
     const logEntry = PBFTState.log[seq];
+    logEntry.executed = true;
+    const request = logEntry.request;
     
-    // Prevent duplicate execution
-    if (!PBFTState.executedRequests.has(logEntry.request.id)) {
-      PBFTState.executedRequests.add(logEntry.request.id);
+    if (request && !PBFTState.executedRequests.has(request.id)) {
+      PBFTState.executedRequests.add(request.id);
 
       // Apply corrupt behavior - modify transaction values
-      let commitValue = logEntry.request.value;
+      let commitValue = request.value;
       if (myBehavior === 'corrupt') {
         const corruptionTypes = ['add', 'multiply', 'random'];
         const corruptionType = corruptionTypes[Math.floor(Math.random() * corruptionTypes.length)];
         
         switch (corruptionType) {
           case 'add':
-            commitValue = logEntry.request.value + Math.floor(Math.random() * 100) + 1;
+            commitValue = request.value + Math.floor(Math.random() * 100) + 1;
             break;
           case 'multiply':
-            commitValue = logEntry.request.value * (Math.floor(Math.random() * 3) + 2);
+            commitValue = request.value * (Math.floor(Math.random() * 3) + 2);
             break;
           case 'random':
             commitValue = Math.floor(Math.random() * 1000) + 1;
             break;
         }
-        logPBFTEvent({node: myNodeID, phase: "CORRUPT", action: `Corrupted value ${logEntry.request.value} -> ${commitValue}`});
+        logPBFTEvent({node: myNodeID, phase: "CORRUPT", action: `Corrupted value ${request.value} -> ${commitValue}`});
       }
       
       // Add the message to the commit log
       pbftCommitLog.push({
         committedAt: new Date().toISOString(),
-        operation: logEntry.request.operation,
+        operation: request.operation || 'TX',
         value: commitValue,
         sequence: seq,
-        totalTimeMs: logEntry.submitTime ? (Date.now() - logEntry.submitTime) : null
+        totalTimeMs: logEntry.submitTime ? (Date.now() - logEntry.submitTime) : (request.submitTime ? (Date.now() - request.submitTime) : null)
       });
+      
+      logPBFTEvent({node: myNodeID, phase: "EXECUTION", action: `Executed request #${seq} in order ✅`});
     }
     
-    logEntry.executed = true;
-    logPBFTEvent({node: myNodeID, phase: "EXECUTION", action: `Executed request #${seq} in order ✅`});
     PBFTState.nextExecuteSeq++;
     if (myNodeID === getPrimary(PBFTState.view)) {
       setImmediate(processNextRequest);
@@ -282,8 +252,9 @@ function handlePBFTMessage(msg, myNodeID) {
   // Handling the PRE-PREPARE PHASE
   if (type === 'PRE-PREPARE') {
     // Only accept from primary
-    if (sender !== getPrimary(data.view)) {
-      logPBFTEvent({node: myNodeID, phase: "PRE-PREPARE", action: `Rejected: Not from primary (${sender} != ${getPrimary(data.view)})`});
+    const currentPrimary = getPrimary(data.view);
+    if (sender !== currentPrimary) {
+      logPBFTEvent({node: myNodeID, phase: "PRE-PREPARE", action: `Rejected: Not from primary (${sender} != ${currentPrimary})`});
       return;
     }
     
@@ -310,106 +281,82 @@ function handlePBFTMessage(msg, myNodeID) {
     logEntry.digest = data.digest;
     logEntry.preprepare = data;
     logEntry.view = data.view;
-    logEntry.prepares.add(myNodeID); // Record self prepare
+    logEntry.prepares.add(myNodeID);
+    logEntry.prepares.add(sender);
     logPBFTEvent({node: myNodeID, phase: "PRE-PREPARE", action: `Accepted PRE-PREPARE for req#${seq} from ${sender}`});
     
-    // Broadcasting the PREPARE Message
+    // Send PREPARE vote directly to Primary (Linear Collector Pattern)
     const prepareMsg = {
       view: PBFTState.view,
       seq,
       digest: data.digest
     };
     
-    broadcastPBFTMessage('PREPARE', myNodeID, seq, prepareMsg);
-    logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Broadcasted PREPARE for req #${seq}`});
+    sendMessageToNode('PREPARE', currentPrimary, seq, prepareMsg);
+    logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Sent PREPARE for req #${seq} to Primary`});
 
-    // Check if prepared state already reached from buffered prepares
-    if (isPrepared(logEntry) && !logEntry.prepared) {
-      logEntry.prepared = true;
-      logEntry.commits.add(myNodeID); // Record self commit
-      logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Request #${seq} is now prepared.`});
-      
-      const commitMsg = {
-        view: PBFTState.view,
-        seq,
-        digest: data.digest
-      };
-      
-      broadcastPBFTMessage('COMMIT', myNodeID, seq, commitMsg);
-      logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Broadcasted COMMIT for req #${seq}`});
-      
-      if (isCommittedLocal(logEntry) && !logEntry.committed_local) {
-        logEntry.committed_local = true;
-        executeInOrder();
-      }
+    if (logEntry.committed_local) {
+      executeInOrder();
     }
   }
 
-  // Handling the PREPARE Phase
+  // Handling the PREPARE Phase (Processed by Primary)
   if (type === 'PREPARE') {
-    // Check for the view number
-    if (data.view !== PBFTState.view) {
-      return;
-    }
+    if (data.view !== PBFTState.view) return;
+    if (logEntry.digest && logEntry.digest !== data.digest) return;
 
-    // Check digest if pre-prepare is already known
-    if (logEntry.digest && logEntry.digest !== data.digest) {
-      return;
-    }
-
-    // Buffer PREPARE message
     logEntry.prepares.add(sender);
     if (!logEntry.digest && data.digest) {
       logEntry.digest = data.digest;
     }
 
-    // If prepared state reached, mark and broadcast COMMIT
-    if (isPrepared(logEntry) && !logEntry.prepared) {
+    const currentPrimary = getPrimary(data.view);
+    // When Primary collects 2f prepares, broadcast COMMIT to all nodes
+    if (myNodeID === currentPrimary && logEntry.prepares.size >= 2 * PBFTState.f && !logEntry.prepared && logEntry.request) {
       logEntry.prepared = true;
-      logEntry.commits.add(myNodeID); // Record self commit
-      logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Request #${seq} is now prepared.`});
+      logEntry.committed_local = true;
+      logPBFTEvent({node: myNodeID, phase: "PREPARE", action: `Request #${seq} is prepared at Primary (collected ${logEntry.prepares.size} votes).`});
       
       const commitMsg = {
         view: PBFTState.view,
         seq,
-        digest: logEntry.digest
+        digest: logEntry.digest,
+        request: logEntry.request
       };
       
       broadcastPBFTMessage('COMMIT', myNodeID, seq, commitMsg);
-      logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Broadcasted COMMIT for req #${seq}`});
-
-      if (isCommittedLocal(logEntry) && !logEntry.committed_local) {
-        logEntry.committed_local = true;
-        executeInOrder();
-      }
+      logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Primary broadcasted COMMIT for req #${seq}`});
+      executeInOrder();
     }
   }
 
   // Handling the COMMIT Phase
   if (type === 'COMMIT') {
-    // Check if the view number is correct
-    if (data.view !== PBFTState.view) {
-      return;
-    }
-    
-    // Check digest if already known
-    if (logEntry.digest && logEntry.digest !== data.digest) {
-      return;
-    }
+    if (data.view !== PBFTState.view) return;
+    if (logEntry.digest && logEntry.digest !== data.digest) return;
 
-    // Buffer the commit message
-    logEntry.commits.add(sender);
-    if (!logEntry.digest && data.digest) {
+    if (data.request) {
+      logEntry.request = data.request;
+    }
+    if (data.digest) {
       logEntry.digest = data.digest;
     }
 
-    // If committed_local state reached, mark it
-    if (isCommittedLocal(logEntry) && !logEntry.committed_local) {
-      logEntry.committed_local = true;
-      logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Request #${seq} is now committed_local.`});
-      executeInOrder();
-    }
+    logEntry.committed_local = true;
+    logPBFTEvent({node: myNodeID, phase: "COMMIT", action: `Request #${seq} committed_local on receipt of COMMIT`});
+    executeInOrder();
   }
+}
+
+function sendMessageToNode(type, targetNodeID, seq, data) {
+  const targetNode = graph.nodeIPsArray.find(obj => Object.keys(obj)[0] === targetNodeID);
+  if (!targetNode) return;
+  
+  const nodeInfo = Object.values(targetNode)[0];
+  const msgObj = { type, sender: myNodeID, seq, data };
+  const signature = signPBFTMessage(msgObj);
+  const signedMsg = { ...msgObj, signature };
+  broadcastNew.sendPostRequestsToIPs(signedMsg, [nodeInfo.ip], [nodeInfo.port], ['api/pbft'], myNodeID);
 }
 
 // PBFT Message Broadcast
