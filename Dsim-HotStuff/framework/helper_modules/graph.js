@@ -6,16 +6,16 @@ const { Graph } = graphlib;
 // Undirected graph for full-mesh communication
 const graph = new Graph({ directed: false });
 
-// 4 Machines x 16 Nodes per machine = 64 Nodes
+// 4 Machines x 32 Nodes per machine = 128 Nodes
 const MACHINES = [
-  { ip: "10.0.1.11", startNode: 1, endNode: 16 },
-  { ip: "10.0.1.12", startNode: 17, endNode: 32 },
-  { ip: "10.0.1.13", startNode: 33, endNode: 48 },
-  { ip: "10.0.1.14", startNode: 49, endNode: 64 }
+  { ip: "10.0.1.11", startNode: 1, endNode: 32 },
+  { ip: "10.0.1.12", startNode: 33, endNode: 64 },
+  { ip: "10.0.1.13", startNode: 65, endNode: 96 },
+  { ip: "10.0.1.14", startNode: 97, endNode: 128 }
 ];
 
 const BASE_PORT = 3001;
-const PORTS_PER_MACHINE = 16;
+const PORTS_PER_MACHINE = 32;
 
 // Node metadata with IP and Port
 const nodeIPsArray = [];

@@ -1,17 +1,17 @@
 #!/bin/bash
 
 # Multi-Server Distributed MIS CLI
-# 4 Machines x 16 Nodes = 64 Nodes Cluster
-# Ports per machine: 3001 to 3016
+# 4 Machines x 32 Nodes = 128 Nodes Cluster
+# Ports per machine: 3001 to 3032
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRAMEWORK_DIR="$SCRIPT_DIR/framework"
-PORTS=(3001 3002 3003 3004 3005 3006 3007 3008 3009 3010 3011 3012 3013 3014 3015 3016)
+PORTS=($(seq 3001 3032))
 PID_DIR="$FRAMEWORK_DIR/pids"
 
 start_nodes() {
     echo "=========================================="
-    echo "Starting 16 MIS nodes on this machine..."
+    echo "Starting 32 MIS nodes on this machine..."
     echo "=========================================="
     
     if [ ! -d "$FRAMEWORK_DIR" ]; then

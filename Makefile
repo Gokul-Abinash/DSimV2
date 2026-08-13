@@ -14,6 +14,7 @@ TOPOLOGY       ?= full
 LATENCY        ?= none
 VALUES         ?= 100,200,300
 COUNT          ?= 100
+CONCURRENCY    ?= 5
 DURATION       ?= 10
 BYZANTINE      ?= silent:1
 CRASH          ?= crash:1
@@ -467,9 +468,37 @@ test-tps-metrics:
 # Comprehensive Benchmark Commands
 # ==============================================================================
 
-.PHONY: test-benchmarks benchmark-latency-full benchmark-scalability-full benchmark-latency benchmark-scalability
+.PHONY: test-benchmarks benchmark-latency-full benchmark-scalability-full benchmark-latency benchmark-scalability benchmark-consensus benchmark-pbft benchmark-hotstuff benchmark-paxos benchmark-raft benchmark-prime benchmark-sbft
 test-benchmarks: benchmark-latency-full benchmark-scalability-full
 	@echo -e "\n$(GREEN)$(BOLD)✅ All Automated Benchmarks Completed! CSV Reports Generated.$(RESET)\n"
+
+# Master consensus metrics benchmark across all 6 protocols
+benchmark-consensus:
+	@echo -e "\n$(MAGENTA)$(BOLD)======================================================================$(RESET)"
+	@echo -e "$(MAGENTA)$(BOLD)📊 RUNNING CONSENSUS METRICS BENCHMARK ACROSS ALL 6 PROTOCOLS$(RESET)"
+	@echo -e "$(MAGENTA)$(BOLD)======================================================================$(RESET)\n"
+	@for algo in pbft hotstuff paxos raft prime sbft; do \
+		echo -e "\n$(CYAN)$(BOLD)>>> Benchmarking $$algo ($(COUNT) requests, $(CONCURRENCY) concurrency) <<<$(RESET)"; \
+		node benchmark-metrics.js $$algo --requests $(COUNT) --concurrency $(CONCURRENCY) || true; \
+	done
+
+benchmark-pbft:
+	@node benchmark-metrics.js pbft --requests $(COUNT) --concurrency $(CONCURRENCY)
+
+benchmark-hotstuff:
+	@node benchmark-metrics.js hotstuff --requests $(COUNT) --concurrency $(CONCURRENCY)
+
+benchmark-paxos:
+	@node benchmark-metrics.js paxos --requests $(COUNT) --concurrency $(CONCURRENCY)
+
+benchmark-raft:
+	@node benchmark-metrics.js raft --requests $(COUNT) --concurrency $(CONCURRENCY)
+
+benchmark-prime:
+	@node benchmark-metrics.js prime --requests $(COUNT) --concurrency $(CONCURRENCY)
+
+benchmark-sbft:
+	@node benchmark-metrics.js sbft --requests $(COUNT) --concurrency $(CONCURRENCY)
 
 benchmark-latency-full: reset
 	@echo -e "\n$(MAGENTA)$(BOLD)======================================================================$(RESET)"

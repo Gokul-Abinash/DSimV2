@@ -6,12 +6,10 @@ const axios = require('axios');
 const graph = require('./helper_modules/graph.js');
 
 async function collectNodeData() {
-  const nodeData = [];
   const nodes = graph.nodeIPsArray;
-  
   console.log(`Querying ${nodes.length} nodes across cluster...`);
   
-  for (const nodeObj of nodes) {
+  const promises = nodes.map(async (nodeObj) => {
     const nodeId = Object.keys(nodeObj)[0];
     const { ip, port } = nodeObj[nodeId];
     
@@ -19,16 +17,16 @@ async function collectNodeData() {
       const commitResponse = await axios.get(`http://${ip}:${port}/api/prime-commit-log`, { timeout: 3000 });
       const logResponse = await axios.get(`http://${ip}:${port}/api/prime-log`, { timeout: 3000 });
       
-      nodeData.push({
+      return {
         port,
         ip,
         nodeId,
         commits: commitResponse.data || [],
         logs: logResponse.data || [],
         status: 'running'
-      });
+      };
     } catch (error) {
-      nodeData.push({
+      return {
         port,
         ip,
         nodeId,
@@ -36,11 +34,11 @@ async function collectNodeData() {
         logs: [],
         status: 'failed',
         error: error.message
-      });
+      };
     }
-  }
+  });
   
-  return nodeData;
+  return Promise.all(promises);
 }
 
 function loadTestMetadata() {

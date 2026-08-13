@@ -82,6 +82,8 @@ function handleClientRequest(request, myNodeID) {
   broadcastPaxosMessage('ACCEPT', myNodeID, acceptMsg);
   logPaxosEvent({node: myNodeID, phase: "ACCEPT", action: `Sent ACCEPT for instance ${instanceId}`});
   
+  const submitTime = request?.submitTime || Date.now();
+  
   // Auto-commit after short delay
   setTimeout(() => {
     logPaxosEvent({node: myNodeID, phase: "DECIDED", action: `Value decided for instance ${instanceId}`});
@@ -91,7 +93,7 @@ function handleClientRequest(request, myNodeID) {
       instanceId,
       operation: request?.operation || 'unknown',
       value: request?.value || 0,
-      totalTimeMs: 100
+      totalTimeMs: Date.now() - submitTime
     });
   }, 50);
 }
@@ -169,6 +171,7 @@ function processPaxosMessage(msg, myNodeID) {
     broadcastPaxosMessage('ACCEPTED', myNodeID, acceptedMsg);
     logPaxosEvent({node: myNodeID, phase: "ACCEPTED", action: `Sent ACCEPTED for proposal ${proposalNumber}`});
     
+    const submitTime = value?.submitTime || Date.now();
     // Auto-commit
     setTimeout(() => {
       logPaxosEvent({node: myNodeID, phase: "DECIDED", action: `Value decided for instance ${instanceId}`});
@@ -178,7 +181,7 @@ function processPaxosMessage(msg, myNodeID) {
         instanceId,
         operation: value?.operation || 'unknown',
         value: value?.value || 0,
-        totalTimeMs: 50
+        totalTimeMs: Date.now() - submitTime
       });
     }, 25);
   }

@@ -1,18 +1,18 @@
 #!/bin/bash
 
 # Multi-Server Distributed PBFT CLI
-# 4 Machines x 16 Nodes = 64 Nodes Cluster
-# Ports per machine: 3001 to 3016
+# 4 Machines x 32 Nodes = 128 Nodes Cluster
+# Ports per machine: 3001 to 3032
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 FRAMEWORK_DIR="$SCRIPT_DIR/framework"
-PORTS=(3001 3002 3003 3004 3005 3006 3007 3008 3009 3010 3011 3012 3013 3014 3015 3016)
+PORTS=($(seq 3001 3032))
 PID_DIR="$FRAMEWORK_DIR/pids"
 PRIMARY_URL="http://10.0.1.11:3001/api/client"
 
 start_nodes() {
     echo "=========================================="
-    echo "Starting 16 PBFT nodes on this machine..."
+    echo "Starting 32 PBFT nodes on this machine..."
     echo "=========================================="
     
     if [ ! -d "$FRAMEWORK_DIR" ]; then
@@ -157,15 +157,34 @@ show_stats() {
     done
 }
 
+run_benchmark() {
+    if [ -f "$SCRIPT_DIR/../benchmark-metrics.js" ]; then
+        node "$SCRIPT_DIR/../benchmark-metrics.js" pbft "$@"
+    else
+        echo "Error: benchmark-metrics.js not found"
+    fi
+}
+
+run_metrics() {
+    if [ -f "$SCRIPT_DIR/../benchmark-metrics.js" ]; then
+        node "$SCRIPT_DIR/../benchmark-metrics.js" pbft evaluate "$@"
+    else
+        echo "Error: benchmark-metrics.js not found"
+    fi
+}
+
 case "$1" in
     start) start_nodes ;;
     stop) stop_nodes ;;
     test) shift; run_tests "$@" ;;
+    benchmark) shift; run_benchmark "$@" ;;
+    metrics) shift; run_metrics "$@" ;;
     verify) run_verify ;;
     stats) show_stats ;;
     status) check_status ;;
     *) 
-        echo "Usage: $0 {start|stop|test|verify|stats|status}"
-        echo "Options for test: --count <N> --concurrency <C> | --values <100,200,300>"
+        echo "Usage: $0 {start|stop|test|benchmark|metrics|verify|stats|status}"
+        echo "Options for test: --values <100,200,300>"
+        echo "Options for benchmark: [requests] [concurrency] (e.g. $0 benchmark 100 5)"
         exit 1 ;;
 esac

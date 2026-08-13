@@ -72,45 +72,49 @@ fi
 
 # Handle benchmark commands
 if [ "$ALGORITHM" = "benchmark" ]; then
-    BENCHMARK_TYPE=$2
-    TARGET=$3
+    TARGET=$2
+    shift 2
     
-    if [ -z "$BENCHMARK_TYPE" ]; then
-        echo "Usage: ./dsim-cli.sh benchmark <type> [target]"
-        echo "Types:"
-        echo "  latency [algorithm|full]     - Latency benchmark"
-        echo "  scalability [algorithm]      - Scalability benchmark"
+    if [ -z "$TARGET" ]; then
+        echo "Usage: ./dsim-cli.sh benchmark <algorithm> [requests] [concurrency]"
+        echo "       ./dsim-cli.sh benchmark <latency|scalability> [algorithm]"
+        echo "Algorithms: pbft, hotstuff, paxos, raft, prime, sbft"
         echo ""
         echo "Examples:"
-        echo "  ./dsim-cli.sh benchmark latency pbft"
+        echo "  ./dsim-cli.sh benchmark pbft 100 5"
+        echo "  ./dsim-cli.sh benchmark raft 200 10"
+        echo "  ./dsim-cli.sh benchmark hotstuff 50 2"
         echo "  ./dsim-cli.sh benchmark latency full"
         echo "  ./dsim-cli.sh benchmark scalability pbft"
-        echo "  ./dsim-cli.sh benchmark scalability"
         exit 1
     fi
     
-    case $BENCHMARK_TYPE in
+    case $TARGET in
         latency)
-            if [ -z "$TARGET" ]; then
+            SUBTARGET=$1
+            if [ -z "$SUBTARGET" ]; then
                 echo "Usage: ./dsim-cli.sh benchmark latency <algorithm|full>"
-                echo "Algorithms: pbft, sbft, raft, paxos, hotstuff"
                 exit 1
             fi
-            echo "🚀 Starting latency benchmark for: $TARGET"
-            node test-latency.js "$TARGET"
+            echo "🚀 Starting latency benchmark for: $SUBTARGET"
+            node test-latency.js "$SUBTARGET"
             ;;
         scalability)
-            if [ -z "$TARGET" ]; then
+            SUBTARGET=$1
+            if [ -z "$SUBTARGET" ]; then
                 echo "🚀 Starting full scalability benchmark (all algorithms)"
                 node scalability-benchmark.js
             else
-                echo "🚀 Starting scalability benchmark for: $TARGET"
-                node scalability-benchmark.js "$TARGET"
+                echo "🚀 Starting scalability benchmark for: $SUBTARGET"
+                node scalability-benchmark.js "$SUBTARGET"
             fi
             ;;
+        pbft|hotstuff|paxos|raft|prime|sbft|PBFT|HOTSTUFF|PAXOS|RAFT|PRIME|SBFT)
+            node benchmark-metrics.js "$TARGET" "$@"
+            ;;
         *)
-            echo "Unknown benchmark type: $BENCHMARK_TYPE"
-            echo "Available types: latency, scalability"
+            echo "Unknown target: $TARGET"
+            echo "Available: pbft, hotstuff, paxos, raft, prime, sbft, latency, scalability"
             exit 1
             ;;
     esac
