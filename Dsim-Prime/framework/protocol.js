@@ -1,9 +1,9 @@
 const graph = require('./helper_modules/graph.js');
-const broadcastNew = require('./helper_modules/broadcastNew.js');
+const broadcastNew = require('./helper_modules/broadcastWithLatency.js');
 const cryptoHelper = require('./helper_modules/cryptoHelper.js');
 const crypto = require('crypto');
 
-const ENABLE_LOGGING = true;
+const ENABLE_LOGGING = process.env.PRIME_VERBOSE === 'true' || process.env.PRIME_VERBOSE === '1';
 
 const primeLog = [];
 const primeCommitLog = [];
@@ -23,6 +23,7 @@ function logPrimeEvent(event) {
 const PrimeState = {
   view: 0,
   sequence: 0,
+  nextExecuteSeq: 1,
   f: 1,
   log: {},
   pendingRequests: [],
@@ -37,7 +38,7 @@ function setNodeContext(nodeID) {
   try {
     const byzantineConfig = require('./byzantine-config.js');
     myBehavior = byzantineConfig[nodeID] || 'honest';
-    console.log(`Node ${nodeID} behavior: ${myBehavior}`);
+    if (ENABLE_LOGGING) console.log(`Node ${nodeID} behavior: ${myBehavior}`);
   } catch (error) {
     myBehavior = 'honest';
   }
@@ -49,12 +50,16 @@ function setNodeContext(nodeID) {
   
   logPrimeEvent({ node: myNodeID, phase: 'INIT', action: 'Node context set' });
   
-  // Faster processing timer
+  // Reactive / periodic leader check
   setInterval(() => {
     if (myNodeID === getLeader(PrimeState.view) && PrimeState.pendingRequests.length > 0) {
       processRequests();
     }
-  }, 100);
+  }, 10);
+
+  setInterval(() => {
+    executeInOrder();
+  }, 10);
 }
 
 function getLeader(view) {
@@ -64,36 +69,48 @@ function getLeader(view) {
 function handleClientRequest(request, nodeID) {
   PrimeState.pendingRequests.push({ ...request, submitTime: Date.now() });
   logPrimeEvent({ node: nodeID, phase: 'CLIENT', action: 'Request received', details: request });
+  if (myNodeID === getLeader(PrimeState.view)) {
+    processRequests();
+  }
 }
+
+const MAX_IN_FLIGHT = 10;
 
 function processRequests() {
   if (PrimeState.pendingRequests.length === 0) return;
   
-  // Allow up to 3 concurrent transactions
-  const maxConcurrent = 3;
-  const activeTransactions = Object.values(PrimeState.log).filter(entry => 
-    entry && !entry.executed
-  ).length;
+  const inFlight = Math.max(0, PrimeState.sequence - PrimeState.nextExecuteSeq + 1);
+  if (inFlight >= MAX_IN_FLIGHT) return;
   
-  if (activeTransactions >= maxConcurrent) return;
+  const availableSlots = Math.max(1, MAX_IN_FLIGHT - inFlight);
+  const batchSize = Math.min(availableSlots, PrimeState.pendingRequests.length);
   
-  const request = PrimeState.pendingRequests.shift();
-  const seq = ++PrimeState.sequence;
-  
-  PrimeState.log[seq] = {
-    request,
-    preprepare: null,
-    prepares: new Set(),
-    commits: new Set(),
-    executed: false,
-    prepared: false,
-    committed: false,
-    view: PrimeState.view
-  };
-
-  const prePrepareMsg = { view: PrimeState.view, seq, request };
-  broadcastMessage('PRE-PREPARE', prePrepareMsg);
-  logPrimeEvent({ node: myNodeID, phase: 'PRE-PREPARE', action: `Sent pre-prepare for seq ${seq}` });
+  for (let i = 0; i < batchSize; i++) {
+    const request = PrimeState.pendingRequests.shift();
+    if (!request) break;
+    
+    PrimeState.sequence += 1;
+    const seq = PrimeState.sequence;
+    
+    PrimeState.log[seq] = PrimeState.log[seq] || {
+      request: null,
+      preprepare: null,
+      prepares: new Set(),
+      commits: new Set(),
+      executed: false,
+      prepared: false,
+      committed: false,
+      view: PrimeState.view
+    };
+    
+    PrimeState.log[seq].request = request;
+    PrimeState.log[seq].submitTime = request.submitTime;
+    PrimeState.log[seq].prepares.add(myNodeID);
+    
+    const prePrepareMsg = { view: PrimeState.view, seq, request };
+    broadcastMessage('PRE-PREPARE', prePrepareMsg);
+    logPrimeEvent({ node: myNodeID, phase: 'PRE-PREPARE', action: `Sent pre-prepare for seq ${seq}` });
+  }
 }
 
 function handlePrimeMessage(msg, nodeID) {
@@ -136,10 +153,10 @@ function onReceivePrePrepare(data, sender) {
   const { view, seq, request } = data;
   if (view !== PrimeState.view) return;
   
-  PrimeState.log[seq] = {
-    request,
-    preprepare: data,
-    prepares: new Set([myNodeID]),
+  PrimeState.log[seq] = PrimeState.log[seq] || {
+    request: null,
+    preprepare: null,
+    prepares: new Set(),
     commits: new Set(),
     executed: false,
     prepared: false,
@@ -147,13 +164,39 @@ function onReceivePrePrepare(data, sender) {
     view
   };
   
+  PrimeState.log[seq].request = request;
+  PrimeState.log[seq].preprepare = data;
+  PrimeState.log[seq].prepares.add(myNodeID);
+  
   broadcastMessage('PREPARE', { view, seq });
   logPrimeEvent({ node: myNodeID, phase: 'PREPARE', action: `Sent prepare for seq ${seq}` });
+
+  // Check if already prepared from buffered votes
+  if (PrimeState.log[seq].prepares.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].prepared) {
+    PrimeState.log[seq].prepared = true;
+    PrimeState.log[seq].commits.add(myNodeID);
+    broadcastMessage('COMMIT', { view, seq });
+  }
+  
+  if (PrimeState.log[seq].commits.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].executed) {
+    executeInOrder();
+  }
 }
 
 function onReceivePrepare(data, sender) {
   const { view, seq } = data;
-  if (view !== PrimeState.view || !PrimeState.log[seq]) return;
+  if (view !== PrimeState.view) return;
+  
+  PrimeState.log[seq] = PrimeState.log[seq] || {
+    request: null,
+    preprepare: null,
+    prepares: new Set(),
+    commits: new Set(),
+    executed: false,
+    prepared: false,
+    committed: false,
+    view
+  };
   
   PrimeState.log[seq].prepares.add(sender);
   
@@ -163,58 +206,82 @@ function onReceivePrepare(data, sender) {
     broadcastMessage('COMMIT', { view, seq });
     logPrimeEvent({ node: myNodeID, phase: 'COMMIT', action: `Sent commit for seq ${seq}` });
   }
+
+  if (PrimeState.log[seq].commits.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].executed) {
+    executeInOrder();
+  }
 }
 
 function onReceiveCommit(data, sender) {
   const { view, seq } = data;
-  if (view !== PrimeState.view || !PrimeState.log[seq]) return;
+  if (view !== PrimeState.view) return;
+  
+  PrimeState.log[seq] = PrimeState.log[seq] || {
+    request: null,
+    preprepare: null,
+    prepares: new Set(),
+    commits: new Set(),
+    executed: false,
+    prepared: false,
+    committed: false,
+    view
+  };
   
   PrimeState.log[seq].commits.add(sender);
   
   if (PrimeState.log[seq].commits.size >= 2 * PrimeState.f + 1 && !PrimeState.log[seq].executed) {
-    executeRequest(seq);
+    executeInOrder();
   }
 }
 
-function executeRequest(seq) {
-  const entry = PrimeState.log[seq];
-  if (!entry || entry.executed) return;
-  
-  entry.executed = true;
-  const request = entry.request;
-  
-  if (!PrimeState.executedRequests.has(request.id)) {
-    PrimeState.executedRequests.add(request.id);
+function executeInOrder() {
+  while (PrimeState.log[PrimeState.nextExecuteSeq] && 
+         PrimeState.log[PrimeState.nextExecuteSeq].commits.size >= 2 * PrimeState.f + 1 && 
+         !PrimeState.log[PrimeState.nextExecuteSeq].executed) {
     
-    // Apply Byzantine behavior to commit log
-    let commitValue = request.value || 0;
-    if (myBehavior === 'corrupt') {
-      const corruptionTypes = ['add', 'multiply', 'random'];
-      const corruptionType = corruptionTypes[Math.floor(Math.random() * corruptionTypes.length)];
+    const seq = PrimeState.nextExecuteSeq;
+    const entry = PrimeState.log[seq];
+    entry.executed = true;
+    const request = entry.request;
+    
+    if (request && !PrimeState.executedRequests.has(request.id)) {
+      PrimeState.executedRequests.add(request.id);
       
-      switch (corruptionType) {
-        case 'add':
-          commitValue = commitValue + Math.floor(Math.random() * 100) + 1;
-          break;
-        case 'multiply':
-          commitValue = commitValue * (Math.floor(Math.random() * 3) + 2);
-          break;
-        case 'random':
-          commitValue = Math.floor(Math.random() * 1000) + 1;
-          break;
+      // Apply Byzantine behavior to commit log
+      let commitValue = request.value || 0;
+      if (myBehavior === 'corrupt') {
+        const corruptionTypes = ['add', 'multiply', 'random'];
+        const corruptionType = corruptionTypes[Math.floor(Math.random() * corruptionTypes.length)];
+        
+        switch (corruptionType) {
+          case 'add':
+            commitValue = commitValue + Math.floor(Math.random() * 100) + 1;
+            break;
+          case 'multiply':
+            commitValue = commitValue * (Math.floor(Math.random() * 3) + 2);
+            break;
+          case 'random':
+            commitValue = Math.floor(Math.random() * 1000) + 1;
+            break;
+        }
+        logPrimeEvent({node: myNodeID, phase: "CORRUPT", action: `Corrupted value ${request.value} -> ${commitValue}`});
       }
-      logPrimeEvent({node: myNodeID, phase: "CORRUPT", action: `Corrupted value ${request.value} -> ${commitValue}`});
+      
+      primeCommitLog.push({
+        committedAt: new Date().toISOString(),
+        operation: request.operation || 'TX',
+        value: commitValue,
+        sequence: seq,
+        totalTimeMs: entry.submitTime ? (Date.now() - entry.submitTime) : (request.submitTime ? (Date.now() - request.submitTime) : null)
+      });
+      
+      logPrimeEvent({ node: myNodeID, phase: 'EXECUTION', action: `Executed request seq ${seq} with value ${commitValue}` });
     }
     
-    primeCommitLog.push({
-      committedAt: new Date().toISOString(),
-      operation: request.operation || 'TX',
-      value: commitValue,
-      sequence: seq,
-      totalTimeMs: request.submitTime ? (Date.now() - request.submitTime) : null
-    });
-    
-    logPrimeEvent({ node: myNodeID, phase: 'EXECUTION', action: `Executed request seq ${seq} with value ${commitValue}` });
+    PrimeState.nextExecuteSeq++;
+    if (myNodeID === getLeader(PrimeState.view)) {
+      setImmediate(processRequests);
+    }
   }
 }
 
@@ -232,7 +299,7 @@ function broadcastMessage(type, data) {
   const endpoints = ports.map(() => 'api/prime');
   const msgObj = { type, sender: myNodeID, data };
   msgObj.signature = signMessage(msgObj);
-  broadcastNew.sendPostRequestsToIPs(msgObj, ips, ports, endpoints);
+  broadcastNew.sendPostRequestsToIPs(msgObj, ips, ports, endpoints, myNodeID);
 }
 
 function getPrimeNodeLog() {
