@@ -4,8 +4,7 @@ const cryptoHelper = require('./helper_modules/cryptoHelper.js');
 const crypto = require('crypto');
 
 const ENABLE_LOGGING = process.env.HOTSTUFF_VERBOSE === 'true' || process.env.HOTSTUFF_VERBOSE === '1';
-const NEXT_VIEW_TIMEOUT = 2000;
-const PACEMAKER_INTERVAL = 100;
+const NEXT_VIEW_TIMEOUT = 5000;
 
 const hotstuffLog = [];
 const hotstuffCommitLog = [];
@@ -30,16 +29,19 @@ function logPhase(nodeID, phase, block, extra = {}) {
   logHotStuffEvent({
     node: nodeID,
     phase,
-    action: `Block ${block.height}`,
-    details: { blockId: digestMessage(block), ...extra }
+    action: `Block ${block ? block.height : '-'}`,
+    details: { blockId: block ? digestMessage(block) : '-', ...extra }
   });
 }
 
 const HotStuffState = {
   view: 0,
   height: 0,
+  nextExecuteHeight: 1,
+  lastExecutedHeight: 0,
   f: 1,
   tree: {},
+  decidedBlocks: {},
   qcHigh: null,
   bLeaf: null,
   bLock: null,
@@ -48,11 +50,7 @@ const HotStuffState = {
   pendingRequests: [],
   pendingVotes: {},
   viewChangeTimer: null,
-  pacemakerTimer: null,
-  clientRequestMap: {},
-  lastExecutedHeight: 0,
-  executedRequests: new Set(),
-  processingTransaction: false
+  executedRequests: new Set()
 };
 
 const nodeIDs = graph.nodeIPsArray.map(obj => Object.keys(obj)[0]);
@@ -90,15 +88,16 @@ function setNodeContext(nodeID) {
   HotStuffState.bLock = genesisBlockId;
   HotStuffState.bExec = genesisBlockId;
 
-  startPacemakerTimer();
-  
-  // Timeout recovery for processing lock
+  // Reactive and periodic leader trigger
   setInterval(() => {
-    if (myNodeID === getLeader(HotStuffState.view) && HotStuffState.processingTransaction) {
-      HotStuffState.processingTransaction = false;
-      logHotStuffEvent({node: myNodeID, phase: "RECOVERY", action: "Unlocked processing due to timeout"});
+    if (myNodeID === getLeader(HotStuffState.view) && HotStuffState.pendingRequests.length > 0) {
+      onBeat();
     }
-  }, 3000);
+  }, 10);
+  
+  setInterval(() => {
+    executeInOrder();
+  }, 10);
   
   logHotStuffEvent({node: myNodeID, phase: "INIT", action: `Node initialized, f=${HotStuffState.f}`});
 }
@@ -134,33 +133,31 @@ function startViewChangeTimer() {
   }, NEXT_VIEW_TIMEOUT);
 }
 
-function startPacemakerTimer() {
-  clearTimeout(HotStuffState.pacemakerTimer);
-  HotStuffState.pacemakerTimer = setTimeout(() => {
-    onBeat();
-  }, PACEMAKER_INTERVAL);
-}
+const MAX_IN_FLIGHT = 10;
 
 function onBeat() {
   if (myNodeID === getLeader(HotStuffState.view) && HotStuffState.pendingRequests.length > 0) {
-    // Allow up to 3 concurrent transactions
-    const maxConcurrent = 3;
-    const activeTransactions = Object.values(HotStuffState.tree).filter(block => 
-      block && block.height > 0 && block.height > HotStuffState.lastExecutedHeight
-    ).length;
-    
-    if (activeTransactions < maxConcurrent) {
-      const cmd = HotStuffState.pendingRequests.shift();
-      createProposal(cmd);
+    const inFlight = Math.max(0, HotStuffState.height - HotStuffState.nextExecuteHeight + 1);
+    if (inFlight < MAX_IN_FLIGHT) {
+      const availableSlots = Math.max(1, MAX_IN_FLIGHT - inFlight);
+      const batchSize = Math.min(availableSlots, HotStuffState.pendingRequests.length);
+      
+      for (let i = 0; i < batchSize; i++) {
+        const cmd = HotStuffState.pendingRequests.shift();
+        if (!cmd) break;
+        createProposal(cmd);
+      }
     }
   }
-  startPacemakerTimer();
 }
 
 function createProposal(cmd) {
+  HotStuffState.height += 1;
+  const currentHeight = HotStuffState.height;
+  
   const block = {
     parent: HotStuffState.bLeaf,
-    height: HotStuffState.tree[HotStuffState.bLeaf].height + 1,
+    height: currentHeight,
     view: HotStuffState.view,
     proposer: myNodeID,
     command: cmd,
@@ -169,6 +166,10 @@ function createProposal(cmd) {
   const blockId = digestMessage(block);
   HotStuffState.tree[blockId] = block;
   HotStuffState.bLeaf = blockId;
+
+  // Leader self-votes on PREPARE
+  if (!HotStuffState.pendingVotes[blockId]) HotStuffState.pendingVotes[blockId] = new Set();
+  HotStuffState.pendingVotes[blockId].add(myNodeID);
 
   broadcastMessage('PREPARE', { block, blockId });
   logPhase(myNodeID, "PREPARE", block, { command: cmd });
@@ -214,12 +215,6 @@ function processHotStuffMessage(msg, nodeID) {
   const { type, sender, data, signature } = msg;
   if (!verifySignature(sender, { type, sender, data }, signature)) return;
   
-  // Apply corrupt behavior to voting
-  if (myBehavior === 'corrupt' && Math.random() < 0.3) {
-    logHotStuffEvent({node: myNodeID, phase: "BYZANTINE", action: `Corrupt node ignoring message type ${type}`});
-    return;
-  }
-  
   switch (type) {
     case 'PREPARE': onReceivePrepare(data, sender); break;
     case 'PREPARE-VOTE': onReceivePrepareVote(data, sender); break;
@@ -234,9 +229,8 @@ function processHotStuffMessage(msg, nodeID) {
 
 function onReceivePrepare(msg, sender) {
   const { block, blockId } = msg;
-  if (!HotStuffState.tree[block.parent]) return;
-
   HotStuffState.tree[blockId] = block;
+  
   const vote = { viewNumber: HotStuffState.view, blockId, voter: myNodeID };
   sendMessageToNode('PREPARE-VOTE', { ...vote }, block.proposer);
   
@@ -253,6 +247,14 @@ function onReceivePrepareVote(msg, sender) {
 
 function onPrepareQCFormed(blockId) {
   const block = HotStuffState.tree[blockId];
+  if (!block) return;
+  
+  HotStuffState.qcHigh = { viewNumber: HotStuffState.view, blockId };
+  
+  const voteKey = 'precommit_' + blockId;
+  if (!HotStuffState.pendingVotes[voteKey]) HotStuffState.pendingVotes[voteKey] = new Set();
+  HotStuffState.pendingVotes[voteKey].add(myNodeID); // Leader self-votes
+  
   broadcastMessage('PRE-COMMIT', { block, blockId });
   logPhase(myNodeID, "PRE-COMMIT", block, { qc: blockId });
 }
@@ -260,6 +262,7 @@ function onPrepareQCFormed(blockId) {
 function onReceivePreCommit(msg, sender) {
   const { block, blockId } = msg;
   HotStuffState.tree[blockId] = block;
+  
   const vote = { viewNumber: HotStuffState.view, blockId, voter: myNodeID };
   sendMessageToNode('PRE-COMMIT-VOTE', { ...vote }, block.proposer);
   logHotStuffEvent({ node: myNodeID, phase: "PRE-COMMIT-VOTE", action: `Sent precommit vote for block ${block.height}` });
@@ -271,7 +274,14 @@ function onReceivePreCommitVote(msg, sender) {
 
 function onPreCommitQCFormed(blockId) {
   const block = HotStuffState.tree[blockId];
-  HotStuffState.lockedQC = { blockId, signatures: HotStuffState.pendingVotes[blockId] };
+  if (!block) return;
+  
+  HotStuffState.lockedQC = { blockId };
+  
+  const voteKey = 'commit_' + blockId;
+  if (!HotStuffState.pendingVotes[voteKey]) HotStuffState.pendingVotes[voteKey] = new Set();
+  HotStuffState.pendingVotes[voteKey].add(myNodeID); // Leader self-votes
+  
   broadcastMessage('COMMIT', { block, blockId });
   logPhase(myNodeID, "COMMIT", block, { qc: blockId });
 }
@@ -279,6 +289,7 @@ function onPreCommitQCFormed(blockId) {
 function onReceiveCommit(msg, sender) {
   const { block, blockId } = msg;
   HotStuffState.tree[blockId] = block;
+  
   const vote = { viewNumber: HotStuffState.view, blockId, voter: myNodeID };
   sendMessageToNode('COMMIT-VOTE', { ...vote }, block.proposer);
   logHotStuffEvent({ node: myNodeID, phase: "COMMIT-VOTE", action: `Sent commit vote for block ${block.height}` });
@@ -290,100 +301,87 @@ function onReceiveCommitVote(msg, sender) {
 
 function onCommitQCFormed(blockId) {
   const block = HotStuffState.tree[blockId];
+  if (!block) return;
+  
   broadcastMessage('DECIDE', { block, blockId });
-  executeBlocks(HotStuffState.bExec, blockId);
-  HotStuffState.bExec = blockId;
+  HotStuffState.decidedBlocks[block.height] = block;
+  executeInOrder();
   logPhase(myNodeID, "DECIDE", block, { executed: true });
   clearTimeout(HotStuffState.viewChangeTimer);
   
-  // Allow next transaction to be processed
   if (myNodeID === getLeader(HotStuffState.view)) {
-    HotStuffState.processingTransaction = false;
+    setImmediate(onBeat);
   }
 }
 
 function onReceiveDecide(msg, sender) {
   const { block, blockId } = msg;
-  if (!HotStuffState.tree[blockId]) HotStuffState.tree[blockId] = block;
-
-  executeBlocks(HotStuffState.bExec, blockId);
-  HotStuffState.bExec = blockId;
+  HotStuffState.tree[blockId] = block;
+  HotStuffState.decidedBlocks[block.height] = block;
+  executeInOrder();
   logPhase(myNodeID, "DECIDE", block, { executed: true });
   clearTimeout(HotStuffState.viewChangeTimer);
-  
-  // Allow next transaction to be processed
-  if (myNodeID === getLeader(HotStuffState.view)) {
-    HotStuffState.processingTransaction = false;
-  }
 }
 
-function collectVote(type, vote, callback) {
+function collectVote(phase, vote, callback) {
   const { blockId, voter } = vote;
-  if (!HotStuffState.pendingVotes[blockId]) HotStuffState.pendingVotes[blockId] = new Set();
-  HotStuffState.pendingVotes[blockId].add(voter);
+  const voteKey = phase === 'prepare' ? blockId : `${phase}_${blockId}`;
   
-  // Byzantine fault tolerance: need 2f+1 votes (majority of all nodes)
+  if (!HotStuffState.pendingVotes[voteKey]) HotStuffState.pendingVotes[voteKey] = new Set();
+  HotStuffState.pendingVotes[voteKey].add(voter);
+  
   const threshold = 2 * HotStuffState.f + 1;
-  if (HotStuffState.pendingVotes[blockId].size >= threshold) {
+  if (HotStuffState.pendingVotes[voteKey].size >= threshold) {
+    delete HotStuffState.pendingVotes[voteKey];
     callback(blockId);
-    delete HotStuffState.pendingVotes[blockId];
   }
 }
 
-function executeBlocks(fromBlockId, toBlockId) {
-  const path = getPathBetweenBlocks(fromBlockId, toBlockId);
-  for (const blockId of path) {
-    const block = HotStuffState.tree[blockId];
-    if (block && block.command && block.height > HotStuffState.lastExecutedHeight) {
-      // Prevent duplicate execution
-      if (!HotStuffState.executedRequests.has(block.command.id)) {
-        HotStuffState.executedRequests.add(block.command.id);
+function executeInOrder() {
+  while (HotStuffState.decidedBlocks[HotStuffState.nextExecuteHeight]) {
+    const height = HotStuffState.nextExecuteHeight;
+    const block = HotStuffState.decidedBlocks[height];
+    const cmd = block.command;
+    
+    if (cmd && !HotStuffState.executedRequests.has(cmd.id)) {
+      HotStuffState.executedRequests.add(cmd.id);
+      
+      let commitValue = cmd.value || 0;
+      if (myBehavior === 'corrupt') {
+        const corruptionTypes = ['add', 'multiply', 'random'];
+        const corruptionType = corruptionTypes[Math.floor(Math.random() * corruptionTypes.length)];
         
-        // Apply corrupt behavior to final commit
-        let commitValue = block.command.value || 0;
-        if (myBehavior === 'corrupt') {
-          // Randomly corrupt the value
-          const corruptionTypes = ['add', 'multiply', 'random'];
-          const corruptionType = corruptionTypes[Math.floor(Math.random() * corruptionTypes.length)];
-          
-          switch (corruptionType) {
-            case 'add':
-              commitValue = commitValue + Math.floor(Math.random() * 100) + 1;
-              break;
-            case 'multiply':
-              commitValue = commitValue * (Math.floor(Math.random() * 3) + 2);
-              break;
-            case 'random':
-              commitValue = Math.floor(Math.random() * 1000) + 1;
-              break;
-          }
-          logHotStuffEvent({node: myNodeID, phase: "CORRUPT", action: `Corrupted value ${block.command.value} -> ${commitValue}`});
+        switch (corruptionType) {
+          case 'add':
+            commitValue = commitValue + Math.floor(Math.random() * 100) + 1;
+            break;
+          case 'multiply':
+            commitValue = commitValue * (Math.floor(Math.random() * 3) + 2);
+            break;
+          case 'random':
+            commitValue = Math.floor(Math.random() * 1000) + 1;
+            break;
         }
-        
-        hotstuffCommitLog.push({
-          committedAt: new Date().toISOString(),
-          operation: block.command.operation || 'TX',
-          value: commitValue,
-          height: block.height,
-          totalTimeMs: block.command.submitTime ? (Date.now() - block.command.submitTime) : null
-        });
-        HotStuffState.lastExecutedHeight = block.height;
+        logHotStuffEvent({node: myNodeID, phase: "CORRUPT", action: `Corrupted value ${cmd.value} -> ${commitValue}`});
       }
+      
+      hotstuffCommitLog.push({
+        committedAt: new Date().toISOString(),
+        operation: cmd.operation || 'TX',
+        value: commitValue,
+        height: height,
+        totalTimeMs: cmd.submitTime ? (Date.now() - cmd.submitTime) : null
+      });
+      
+      HotStuffState.lastExecutedHeight = height;
+      logHotStuffEvent({node: myNodeID, phase: "EXECUTION", action: `Executed block #${height} in order ✅`});
+    }
+    
+    HotStuffState.nextExecuteHeight++;
+    if (myNodeID === getLeader(HotStuffState.view)) {
+      setImmediate(onBeat);
     }
   }
-}
-
-function getPathBetweenBlocks(fromBlockId, toBlockId) {
-  const path = [];
-  let currentBlockId = toBlockId;
-  
-  while (currentBlockId && currentBlockId !== fromBlockId) {
-    path.unshift(currentBlockId);
-    const block = HotStuffState.tree[currentBlockId];
-    currentBlockId = block ? block.parent : null;
-  }
-  
-  return path;
 }
 
 function onNewView() {
@@ -396,7 +394,6 @@ function onNewView() {
 }
 
 function onReceiveNewView(msg, sender) {
-  // Simplified view change handling
   if (msg.view > HotStuffState.view) {
     HotStuffState.view = msg.view;
     logHotStuffEvent({
@@ -432,7 +429,7 @@ function sendMessageToNode(type, data, targetNodeID) {
   const signature = signMessage(msgObj);
   const signedMsg = { ...msgObj, signature };
 
-  broadcastNew.sendPostRequestsToIPs(signedMsg, [nodeInfo.ip], [nodeInfo.port], ['api/hotstuff']);
+  broadcastNew.sendPostRequestsToIPs(signedMsg, [nodeInfo.ip], [nodeInfo.port], ['api/hotstuff'], myNodeID);
 }
 
 function getHotStuffNodeLog() {
