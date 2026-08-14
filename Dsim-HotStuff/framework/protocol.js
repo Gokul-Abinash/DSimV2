@@ -88,7 +88,7 @@ function setNodeContext(nodeID) {
   HotStuffState.bLock = genesisBlockId;
   HotStuffState.bExec = genesisBlockId;
 
-  // Reactive and periodic leader trigger
+  // Periodic triggers for leader and sequential execution
   setInterval(() => {
     if (myNodeID === getLeader(HotStuffState.view) && HotStuffState.pendingRequests.length > 0) {
       onBeat();
@@ -229,6 +229,7 @@ function processHotStuffMessage(msg, nodeID) {
 
 function onReceivePrepare(msg, sender) {
   const { block, blockId } = msg;
+  if (!block) return;
   HotStuffState.tree[blockId] = block;
   
   const vote = { viewNumber: HotStuffState.view, blockId, voter: myNodeID };
@@ -239,6 +240,10 @@ function onReceivePrepare(msg, sender) {
     phase: "PREPARE-VOTE",
     action: `Sent prepare vote for block ${block.height}`
   });
+
+  if (HotStuffState.decidedBlocks[block.height]) {
+    executeInOrder();
+  }
 }
 
 function onReceivePrepareVote(msg, sender) {
@@ -251,21 +256,25 @@ function onPrepareQCFormed(blockId) {
   
   HotStuffState.qcHigh = { viewNumber: HotStuffState.view, blockId };
   
-  const voteKey = 'precommit_' + blockId;
-  if (!HotStuffState.pendingVotes[voteKey]) HotStuffState.pendingVotes[voteKey] = new Set();
-  HotStuffState.pendingVotes[voteKey].add(myNodeID); // Leader self-votes
+  // Fast Linear HotStuff: PrepareQC forms consensus -> Leader broadcasts DECIDE
+  broadcastMessage('DECIDE', { block, blockId });
+  HotStuffState.decidedBlocks[block.height] = block;
+  executeInOrder();
+  logPhase(myNodeID, "DECIDE", block, { executed: true, qc: blockId });
+  clearTimeout(HotStuffState.viewChangeTimer);
   
-  broadcastMessage('PRE-COMMIT', { block, blockId });
-  logPhase(myNodeID, "PRE-COMMIT", block, { qc: blockId });
+  if (myNodeID === getLeader(HotStuffState.view)) {
+    setImmediate(onBeat);
+  }
 }
 
 function onReceivePreCommit(msg, sender) {
   const { block, blockId } = msg;
+  if (!block) return;
   HotStuffState.tree[blockId] = block;
   
   const vote = { viewNumber: HotStuffState.view, blockId, voter: myNodeID };
   sendMessageToNode('PRE-COMMIT-VOTE', { ...vote }, block.proposer);
-  logHotStuffEvent({ node: myNodeID, phase: "PRE-COMMIT-VOTE", action: `Sent precommit vote for block ${block.height}` });
 }
 
 function onReceivePreCommitVote(msg, sender) {
@@ -277,22 +286,16 @@ function onPreCommitQCFormed(blockId) {
   if (!block) return;
   
   HotStuffState.lockedQC = { blockId };
-  
-  const voteKey = 'commit_' + blockId;
-  if (!HotStuffState.pendingVotes[voteKey]) HotStuffState.pendingVotes[voteKey] = new Set();
-  HotStuffState.pendingVotes[voteKey].add(myNodeID); // Leader self-votes
-  
   broadcastMessage('COMMIT', { block, blockId });
-  logPhase(myNodeID, "COMMIT", block, { qc: blockId });
 }
 
 function onReceiveCommit(msg, sender) {
   const { block, blockId } = msg;
+  if (!block) return;
   HotStuffState.tree[blockId] = block;
   
   const vote = { viewNumber: HotStuffState.view, blockId, voter: myNodeID };
   sendMessageToNode('COMMIT-VOTE', { ...vote }, block.proposer);
-  logHotStuffEvent({ node: myNodeID, phase: "COMMIT-VOTE", action: `Sent commit vote for block ${block.height}` });
 }
 
 function onReceiveCommitVote(msg, sender) {
@@ -316,6 +319,7 @@ function onCommitQCFormed(blockId) {
 
 function onReceiveDecide(msg, sender) {
   const { block, blockId } = msg;
+  if (!block) return;
   HotStuffState.tree[blockId] = block;
   HotStuffState.decidedBlocks[block.height] = block;
   executeInOrder();
@@ -325,14 +329,16 @@ function onReceiveDecide(msg, sender) {
 
 function collectVote(phase, vote, callback) {
   const { blockId, voter } = vote;
+  if (!blockId) return;
+  const voterId = voter || 'unknown';
   const voteKey = phase === 'prepare' ? blockId : `${phase}_${blockId}`;
   
   if (!HotStuffState.pendingVotes[voteKey]) HotStuffState.pendingVotes[voteKey] = new Set();
-  HotStuffState.pendingVotes[voteKey].add(voter);
+  HotStuffState.pendingVotes[voteKey].add(voterId);
   
-  const threshold = 2 * HotStuffState.f + 1;
+  // Required quorum: 2f votes from replicas (+ leader self-vote = 2f+1)
+  const threshold = 2 * HotStuffState.f;
   if (HotStuffState.pendingVotes[voteKey].size >= threshold) {
-    delete HotStuffState.pendingVotes[voteKey];
     callback(blockId);
   }
 }
@@ -341,7 +347,7 @@ function executeInOrder() {
   while (HotStuffState.decidedBlocks[HotStuffState.nextExecuteHeight]) {
     const height = HotStuffState.nextExecuteHeight;
     const block = HotStuffState.decidedBlocks[height];
-    const cmd = block.command;
+    const cmd = block ? block.command : null;
     
     if (cmd && !HotStuffState.executedRequests.has(cmd.id)) {
       HotStuffState.executedRequests.add(cmd.id);
