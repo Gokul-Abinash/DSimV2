@@ -42,6 +42,7 @@ const HotStuffState = {
   f: 1,
   tree: {},
   decidedBlocks: {},
+  formedQCs: new Set(),
   qcHigh: null,
   bLeaf: null,
   bLock: null,
@@ -253,12 +254,13 @@ function onReceivePrepareVote(msg, sender) {
 function onPrepareQCFormed(blockId) {
   const block = HotStuffState.tree[blockId];
   if (!block) return;
+  if (HotStuffState.decidedBlocks[block.height]) return; // Already decided
   
+  HotStuffState.decidedBlocks[block.height] = block;
   HotStuffState.qcHigh = { viewNumber: HotStuffState.view, blockId };
   
-  // Fast Linear HotStuff: PrepareQC forms consensus -> Leader broadcasts DECIDE
+  // Fast Linear HotStuff: PrepareQC forms consensus -> Leader broadcasts DECIDE exactly once
   broadcastMessage('DECIDE', { block, blockId });
-  HotStuffState.decidedBlocks[block.height] = block;
   executeInOrder();
   logPhase(myNodeID, "DECIDE", block, { executed: true, qc: blockId });
   clearTimeout(HotStuffState.viewChangeTimer);
@@ -305,9 +307,10 @@ function onReceiveCommitVote(msg, sender) {
 function onCommitQCFormed(blockId) {
   const block = HotStuffState.tree[blockId];
   if (!block) return;
+  if (HotStuffState.decidedBlocks[block.height]) return;
   
-  broadcastMessage('DECIDE', { block, blockId });
   HotStuffState.decidedBlocks[block.height] = block;
+  broadcastMessage('DECIDE', { block, blockId });
   executeInOrder();
   logPhase(myNodeID, "DECIDE", block, { executed: true });
   clearTimeout(HotStuffState.viewChangeTimer);
@@ -338,7 +341,8 @@ function collectVote(phase, vote, callback) {
   
   // Required quorum: 2f votes from replicas (+ leader self-vote = 2f+1)
   const threshold = 2 * HotStuffState.f;
-  if (HotStuffState.pendingVotes[voteKey].size >= threshold) {
+  if (HotStuffState.pendingVotes[voteKey].size >= threshold && !HotStuffState.formedQCs.has(voteKey)) {
+    HotStuffState.formedQCs.add(voteKey);
     callback(blockId);
   }
 }
